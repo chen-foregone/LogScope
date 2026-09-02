@@ -11,7 +11,9 @@ from app.core.config import settings
 from app.investigations import investigation_router
 
 
-def create_app(database_url: str | None = None) -> FastAPI:
+def create_app(database_url: str | None = None, *, services_file=None, executor_credential=None, execution_adapter=None) -> FastAPI:
+    from app.services import load_services, service_router
+    services = load_services(services_file if services_file is not None else settings.services_file)
     engine = create_engine(database_url or settings.database_url, pool_pre_ping=True)
 
     @asynccontextmanager
@@ -33,6 +35,11 @@ def create_app(database_url: str | None = None) -> FastAPI:
         allow_origins=["http://127.0.0.1:5173", "http://localhost:5173"],
         allow_credentials=True, allow_methods=["*"], allow_headers=["*"],
     )
+    from app.attempts import ControlledExecutionAdapter, attempt_router
+    from app.execution import execution_router
+    application.include_router(execution_router(engine, executor_credential if executor_credential is not None else settings.executor_credential), prefix=settings.api_prefix)
+    application.include_router(attempt_router(engine, services, execution_adapter or ControlledExecutionAdapter()), prefix=settings.api_prefix)
+    application.include_router(service_router(services), prefix=settings.api_prefix)
     application.include_router(health_router, prefix=settings.api_prefix)
     application.include_router(investigation_router(engine), prefix=settings.api_prefix)
 

@@ -38,14 +38,14 @@ class InvestigationView(BaseModel):
     id: UUID
     title: str
     description: str
-    status: Literal["待处理"]
+    status: Literal["待处理", "调查中"]
     severity: Literal["未评估"]
-    service: None
+    service: str | None
     attempts: list[dict]
     evidence_count: Literal[0]
     created_at: datetime
     updated_at: datetime
-    retention_expires_at: datetime
+    retention_expires_at: datetime | None
 
 
 class InvestigationList(BaseModel):
@@ -53,17 +53,20 @@ class InvestigationList(BaseModel):
     total: int
 
 
-def representation(row):
+def representation(row, attempts=None):
+    attempts = attempts or []
     return {
         **{key: value for key, value in row.items() if key != "request_key"}, "id": str(row["id"]),
-        **{key: row[key].astimezone(timezone.utc).isoformat().replace("+00:00", "Z")
+        **{key: row[key].astimezone(timezone.utc).isoformat().replace("+00:00", "Z") if row[key] else None
            for key in ("created_at", "updated_at", "retention_expires_at")},
-        "status": "待处理", "severity": "未评估", "service": None,
-        "attempts": [], "evidence_count": 0,
+        "status": attempts[-1]["status"] if attempts else "待处理", "severity": "未评估",
+        "service": attempts[-1]["service_id"] if attempts else None,
+        "attempts": attempts, "evidence_count": 0,
     }
 
 
 def investigation_router(engine):
+    from app.attempts import current_view
     router = APIRouter(prefix="/investigations")
 
     @router.post("", status_code=201, response_model=InvestigationView)
@@ -79,12 +82,14 @@ def investigation_router(engine):
                 .returning(investigations)
             ).mappings().first()
             if row is None:
+                # 与start使用同一调查行排他锁，保证后续轮次投影不跨启动提交。
                 row = connection.execute(select(investigations).where(
-                    investigations.c.request_key == idempotency_key)).mappings().one()
+                    investigations.c.request_key == idempotency_key).with_for_update()).mappings().one()
                 if any(row[key] != value for key, value in payload.model_dump().items()):
                     raise HTTPException(409, "请求标识已用于不同创建内容")
                 response.status_code = 200
-        return representation(row)
+            result = current_view(connection, row)
+        return result
 
     @router.get("", response_model=InvestigationList)
     def listing(q: str = ""):
@@ -95,16 +100,20 @@ def investigation_router(engine):
                 investigations.c.title.icontains(query, autoescape=True),
                 cast(investigations.c.id, String).icontains(query, autoescape=True),
             ))
-        with engine.connect() as connection:
+        # 调查字段与各轮次投影必须来自同一快照；不改变启动等写事务隔离。
+        with engine.connect().execution_options(isolation_level="REPEATABLE READ") as connection:
             rows = connection.execute(statement.order_by(investigations.c.updated_at.desc(), investigations.c.id)).mappings().all()
-        return {"items": [representation(row) for row in rows], "total": len(rows)}
+            items = [current_view(connection, row) for row in rows]
+        return {"items": items, "total": len(rows)}
 
     @router.get("/{investigation_id}", response_model=InvestigationView)
     def detail(investigation_id: UUID):
-        with engine.connect() as connection:
+        # 调查字段与各轮次投影必须来自同一快照；不改变启动等写事务隔离。
+        with engine.connect().execution_options(isolation_level="REPEATABLE READ") as connection:
             row = connection.execute(select(investigations).where(investigations.c.id == investigation_id)).mappings().first()
-        if row is None:
-            raise HTTPException(404, "调查不存在")
-        return representation(row)
+            if row is None:
+                raise HTTPException(404, "调查不存在")
+            result = current_view(connection, row)
+        return result
 
     return router

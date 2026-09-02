@@ -1,0 +1,5 @@
+{
+  "services": [
+    {"id": "orders", "name": "订单服务（仅可控适配）", "source_ids": ["controlled-orders"]}
+  ]
+}

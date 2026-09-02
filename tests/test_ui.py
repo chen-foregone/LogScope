@@ -3,6 +3,7 @@ from datetime import datetime, timedelta
 from uuid import uuid4
 
 import httpx
+import pytest
 from playwright.sync_api import sync_playwright, expect
 
 
@@ -47,6 +48,171 @@ def test_create_refresh_list_detail_and_validation():
         with httpx.Client() as client:
             assert client.get(f'{BASE}/api/investigations/{record["id"]}').json() == record
         assert errors == []
+        browser.close()
+
+
+def test_start_fixed_range_and_server_error():
+    title = f"UI启动-{uuid4().hex[:8]}"
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(BASE)
+        page.get_by_role("button", name="新建调查", exact=True).click()
+        page.get_by_label("调查标题").fill(title)
+        page.get_by_role("button", name="保存待处理调查").click()
+        expect(page.get_by_role("heading", name=title)).to_be_visible()
+        page.get_by_label("被调查服务", exact=True).select_option("orders")
+        expect(page.get_by_label("范围模式")).to_have_value("recent")
+        page.get_by_label("范围模式").select_option("absolute")
+        page.get_by_label("日志开始时间").fill("2026-10-29T08:00:00+08:00")
+        page.get_by_label("日志结束时间").fill("2026-10-31T08:00:00+08:00")
+        page.get_by_role("button", name="启动调查", exact=True).click()
+        expect(page.get_by_role("alert")).to_contain_text("24小时")
+        page.get_by_label("日志开始时间").fill("2026-10-30T08:00:00+08:00")
+        with page.expect_response(lambda r: r.url.endswith("/attempts") and r.request.method == "POST") as response:
+            page.get_by_role("button", name="启动调查", exact=True).click()
+        assert response.value.status == 201
+        record = response.value.json()
+        detail = page.get_by_role("region", name="调查详情")
+        expect(detail).to_contain_text("调查中")
+        expect(detail).to_contain_text("orders")
+        expect(detail).to_contain_text("2026-10-30 08:00:00 UTC+8")
+        expect(detail).to_contain_text("2026-10-31 08:00:00 UTC+8")
+        expect(detail).to_contain_text("可控执行适配器")
+        expect(detail).to_contain_text("运行中不清理")
+        expect(page.get_by_role("button", name="启动调查", exact=True)).to_have_count(0)
+        page.reload()
+        expect(detail).to_contain_text("2026-10-30 08:00:00 UTC+8")
+        with httpx.Client() as client:
+            assert client.get(f'{BASE}/api/investigations/{record["id"]}').json() == record
+        browser.close()
+
+
+def test_default_start_lost_response_replays_one_fixed_attempt():
+    title = f"UI启动重放-{uuid4().hex[:8]}"
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        page.goto(BASE)
+        page.get_by_role('button', name='新建调查', exact=True).click()
+        page.get_by_label('调查标题').fill(title)
+        page.get_by_role('button', name='保存待处理调查').click()
+        expect(page.get_by_role('heading', name=title)).to_be_visible()
+        page.get_by_label('被调查服务', exact=True).select_option('orders')
+        saved = []
+        def lose_response(route):
+            response = route.fetch()
+            saved.append(response.json())
+            route.abort('failed')
+        page.route('**/attempts', lose_response, times=1)
+        page.get_by_role('button', name='启动调查', exact=True).click()
+        expect(page.get_by_role('alert')).to_be_visible()
+        with page.expect_response(lambda r: r.url.endswith('/attempts') and r.request.method == 'POST') as response:
+            page.get_by_role('button', name='启动调查', exact=True).click()
+        assert response.value.status == 200
+        assert response.value.json() == saved[0]
+        attempt = saved[0]['attempts'][0]
+        assert (datetime.fromisoformat(attempt['ends_at'].replace('Z', '+00:00')) - datetime.fromisoformat(attempt['starts_at'].replace('Z', '+00:00'))).total_seconds() == 3600
+        expect(page.get_by_role('region', name='调查详情')).to_contain_text('调查中')
+        browser.close()
+
+
+@pytest.mark.parametrize('late_status', [201, 422])
+def test_late_start_response_cannot_replace_new_route_or_clear_its_inflight(late_status):
+    with httpx.Client(base_url=BASE) as client:
+        records = []
+        for label in ('A', 'B'):
+            reply = client.post('/api/investigations', json={'title': f'延迟导航{label}-{uuid4().hex[:8]}'},
+                                headers={'Idempotency-Key': str(uuid4())})
+            assert reply.status_code == 201
+            records.append(reply.json())
+    a, b = records
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        errors = []
+        page.on('pageerror', lambda error: errors.append(str(error)))
+        held = []
+
+        def hold(route):
+            response = route.fetch()
+            held.append((route, response))
+
+        page.route('**/attempts', hold)
+        page.goto(f'{BASE}/#/investigations/{a["id"]}')
+        page.get_by_label('被调查服务', exact=True).select_option('orders')
+        if late_status == 422:
+            page.get_by_label('范围模式').select_option('absolute')
+            page.get_by_label('日志开始时间').fill('2026-10-29T08:00:00+08:00')
+            page.get_by_label('日志结束时间').fill('2026-10-31T08:00:00+08:00')
+        with page.expect_request('**/attempts'):
+            page.get_by_role('button', name='启动调查', exact=True).click()
+        page.get_by_role('button', name='返回列表').click()
+        page.get_by_role('button', name=b['title'], exact=True).first.click()
+        expect(page.get_by_role('heading', name=b['title'], exact=True)).to_be_visible()
+        # A 尚未返回，B 必须仍可发起自己的请求。
+        expect(page.get_by_label('被调查服务', exact=True)).to_be_enabled()
+        page.get_by_label('被调查服务', exact=True).select_option('orders')
+        with page.expect_request('**/attempts'):
+            page.get_by_role('button', name='启动调查', exact=True).click()
+        expect(page.get_by_label('被调查服务', exact=True)).to_be_disabled()
+        assert held[0][1].status == late_status
+        with page.expect_response(lambda r: r.url.endswith(f'/investigations/{a["id"]}/attempts')):
+            held[0][0].fulfill(response=held[0][1])
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        expect(page).to_have_url(f'{BASE}/#/investigations/{b["id"]}')
+        expect(page.get_by_role('heading', name=b['title'], exact=True)).to_be_visible()
+        expect(page.get_by_role('alert')).to_have_count(0)
+        expect(page.get_by_label('被调查服务', exact=True)).to_be_disabled()
+        held[1][0].abort('failed')
+        expect(page.get_by_role('alert')).to_be_visible()
+        page.unroute('**/attempts', hold)
+        with page.expect_response(lambda r: r.url.endswith(f'/investigations/{b["id"]}/attempts')) as replay:
+            page.get_by_role('button', name='启动调查', exact=True).click()
+        assert replay.value.status == 200
+        assert replay.value.json() == held[1][1].json()
+        expect(page.get_by_role('region', name='调查详情')).to_contain_text('调查中')
+        assert errors == []
+        browser.close()
+
+
+def test_late_start_failure_after_return_to_same_route_does_not_block_retry():
+    with httpx.Client(base_url=BASE) as client:
+        reply = client.post('/api/investigations', json={'title': f'原路重试-{uuid4().hex[:8]}'},
+                            headers={'Idempotency-Key': str(uuid4())})
+        assert reply.status_code == 201
+        record = reply.json()
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        page = browser.new_page()
+        held = []
+
+        def hold(route):
+            held.append((route, route.fetch()))
+
+        page.route('**/attempts', hold, times=1)
+        url = f'{BASE}/#/investigations/{record["id"]}'
+        page.goto(url)
+        page.get_by_label('被调查服务', exact=True).select_option('orders')
+        page.get_by_label('范围模式').select_option('absolute')
+        page.get_by_label('日志开始时间').fill('2026-10-29T08:00:00+08:00')
+        page.get_by_label('日志结束时间').fill('2026-10-31T08:00:00+08:00')
+        with page.expect_request('**/attempts'):
+            page.get_by_role('button', name='启动调查', exact=True).click()
+        page.get_by_role('button', name='返回列表').click()
+        page.get_by_role('button', name=record['title'], exact=True).first.click()
+        expect(page.get_by_role('heading', name=record['title'], exact=True)).to_be_visible()
+        assert held[0][1].status == 422
+        with page.expect_response('**/attempts'):
+            held[0][0].fulfill(response=held[0][1])
+        page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+        expect(page.get_by_role('alert')).to_have_count(0)
+        expect(page.get_by_label('被调查服务', exact=True)).to_be_enabled()
+        page.get_by_label('被调查服务', exact=True).select_option('orders')
+        with page.expect_response('**/attempts') as response:
+            page.get_by_role('button', name='启动调查', exact=True).click()
+        assert response.value.status == 201
+        expect(page.get_by_role('region', name='调查详情')).to_contain_text('调查中')
         browser.close()
 
 
