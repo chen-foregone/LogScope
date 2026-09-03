@@ -384,7 +384,7 @@ def test_adapter_exception_leaves_no_false_running_attempt(database_url, tmp_pat
 def test_invalid_catalog_fails_closed_and_empty_configuration_cannot_start(database_url, tmp_path):
     from app.main import create_app
     config = tmp_path / 'invalid.json'
-    for source in ('', ' ', 'bad\u0000source'):
+    for source in ('', ' ', 'bad\u0000source', 'https://user:secret@synthetic.invalid/log?token=synthetic'):
         config.write_text(json.dumps({'services': [{'id': 'orders', 'name': '订单', 'source_ids': [source]}]}), encoding='utf-8')
         with pytest.raises(ValueError, match='服务目录配置无效'):
             create_app(database_url=database_url, services_file=config)
@@ -451,12 +451,26 @@ def test_started_attempt_survives_real_process_restart(database_url, tmp_path):
         attempt = record['attempts'][0]
         controlled = f'/api/executor/investigations/{pending["id"]}/attempts/{attempt["id"]}/executions'
         accepted = client.get(controlled, headers=auth).json()
+        from test_evidence import material
+        payload = material()
+        payload['occurred_at'] = attempt['starts_at']
+        payload['query']['starts_at'] = attempt['starts_at']
+        payload['query']['ends_at'] = attempt['ends_at']
+        endpoint = controlled + '/' + accepted['executions'][0]['id'] + '/evidence'
+        saved = client.post(endpoint, json=payload, headers=auth)
+        assert saved.status_code == 201
+        record = client.get(path).json()
     with server() as client:
         assert client.get(path).json() == record
         replay = client.post(path + '/attempts', json={'service_id': 'orders'}, headers=headers)
         assert replay.status_code == 200
         assert replay.json() == record
         assert client.get(controlled, headers=auth).json() == accepted
+        repeated = client.post(endpoint, json=payload, headers=auth)
+        assert repeated.status_code == 201
+        assert repeated.json()['snippet'] == saved.json()['snippet']
+        assert repeated.json()['locator'] == saved.json()['locator']
+        assert client.get(path).json()['evidence_count'] == 2
 
 
 def test_configured_services_are_available_without_secrets(database_url, tmp_path):

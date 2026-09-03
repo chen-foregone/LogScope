@@ -1,0 +1,63 @@
+import os
+import secrets
+import socket
+import subprocess
+import sys
+import time
+from pathlib import Path
+from uuid import uuid4
+
+import httpx
+import pytest
+from sqlalchemy import create_engine, text
+
+ROOT = Path(__file__).resolve().parents[1]
+
+
+@pytest.fixture(scope='session', autouse=True)
+def evidence_executor():
+    # UI必须先用全新隔离schema真实迁移，再启动API/Vite；凭证仅存在进程内。
+    database = os.environ.get('TEST_DATABASE_URL', 'postgresql+psycopg://logscope_test:local_test_only@127.0.0.1:55433/logscope_test')
+    from sqlalchemy.engine import make_url
+    parsed = make_url(database)
+    assert parsed.host == '127.0.0.1' and parsed.port == 55433, 'UI只允许隔离PG17端口55433'
+    for port in (8000, 5173):
+        with socket.socket() as probe:
+            assert probe.connect_ex(('127.0.0.1', port)) != 0, 'UI测试端口已占用，不能复用未知服务'
+    schema = 'issue03_ui_' + uuid4().hex
+    engine = create_engine(database)
+    with engine.begin() as connection:
+        connection.execute(text(f'CREATE SCHEMA "{schema}"'))
+    engine.dispose()
+    credential = secrets.token_urlsafe(32)
+    env = {**os.environ, 'DATABASE_URL': database + '?options=-csearch_path%3D' + schema,
+           'PYTHONPATH': str(ROOT / 'backend'), 'SERVICES_FILE': str(ROOT / 'backend/services.example.json'),
+           'EXECUTOR_CREDENTIAL': credential, 'NO_PROXY': '127.0.0.1,localhost', 'no_proxy': '127.0.0.1,localhost'}
+    migration = subprocess.run([sys.executable, '-m', 'alembic', '-c', 'backend/alembic.ini', 'upgrade', 'head'],
+                               cwd=ROOT, env=env, capture_output=True)
+    assert migration.returncode == 0, 'UI隔离schema真实迁移失败'
+    processes = []
+    try:
+        processes.append(subprocess.Popen([sys.executable, '-m', 'uvicorn', 'app.main:app', '--app-dir', 'backend',
+                                          '--host', '127.0.0.1', '--port', '8000', '--no-access-log'],
+                                         cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+        processes.append(subprocess.Popen(['node', 'node_modules/vite/bin/vite.js', '--host', '127.0.0.1',
+                                          '--port', '5173', '--strictPort'], cwd=ROOT, env=env,
+                                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
+        with httpx.Client(timeout=2, trust_env=False) as client:
+            deadline = time.monotonic() + 30
+            while True:
+                assert all(process.poll() is None for process in processes), 'UI的API/Vite进程启动失败'
+                try:
+                    services = client.get('http://127.0.0.1:5173/api/services')
+                    if services.status_code == 200 and services.json()['items'][0]['id'] == 'orders':
+                        break
+                except (httpx.TransportError, ValueError, KeyError, IndexError):
+                    pass
+                assert time.monotonic() < deadline, 'UI真实API/Vite未在期限内就绪'
+        print('UI隔离schema: ' + schema)
+        yield {'Authorization': 'Bearer ' + credential}
+    finally:
+        for process in reversed(processes):
+            process.terminate()
+            process.wait(timeout=15)

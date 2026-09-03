@@ -14,7 +14,7 @@ from app.investigations import investigation_router
 def create_app(database_url: str | None = None, *, services_file=None, executor_credential=None, execution_adapter=None) -> FastAPI:
     from app.services import load_services, service_router
     services = load_services(services_file if services_file is not None else settings.services_file)
-    engine = create_engine(database_url or settings.database_url, pool_pre_ping=True)
+    engine = create_engine(database_url or settings.database_url, pool_pre_ping=True, hide_parameters=True)
 
     @asynccontextmanager
     async def lifespan(app):
@@ -37,6 +37,8 @@ def create_app(database_url: str | None = None, *, services_file=None, executor_
     )
     from app.attempts import ControlledExecutionAdapter, attempt_router
     from app.execution import execution_router
+    from app.evidence import evidence_router
+    application.include_router(evidence_router(engine, executor_credential if executor_credential is not None else settings.executor_credential), prefix=settings.api_prefix)
     application.include_router(execution_router(engine, executor_credential if executor_credential is not None else settings.executor_credential), prefix=settings.api_prefix)
     application.include_router(attempt_router(engine, services, execution_adapter or ControlledExecutionAdapter()), prefix=settings.api_prefix)
     application.include_router(service_router(services), prefix=settings.api_prefix)

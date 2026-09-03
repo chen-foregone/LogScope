@@ -216,6 +216,55 @@ def test_late_start_failure_after_return_to_same_route_does_not_block_retry():
         browser.close()
 
 
+def test_evidence_cards_refresh_without_raw_sensitive_content(evidence_executor):
+    marker = uuid4().hex
+    with httpx.Client(base_url=BASE, trust_env=False) as client:
+        pending = client.post('/api/investigations', json={'title': 'UI证据-' + uuid4().hex[:8]},
+                              headers={'Idempotency-Key': str(uuid4())}).json()
+        path = '/api/investigations/' + pending['id']
+        record = client.post(path + '/attempts', json={'service_id': 'orders',
+            'starts_at': '2026-11-01T00:00:00Z', 'ends_at': '2026-11-01T01:00:00Z'},
+            headers={'Idempotency-Key': str(uuid4())}).json()
+        attempt = record['attempts'][0]['id']
+        base = f'/api/executor/investigations/{pending["id"]}/attempts/{attempt}/executions'
+        identity = client.get(base, headers=evidence_executor).json()['executions'][0]['id']
+        endpoint = base + '/' + identity + '/evidence'
+        payload = {'format': 'controlled-event-v1', 'source_id': 'controlled-orders',
+            'occurred_at': '2026-11-01T00:15:00Z',
+            'query': {'starts_at': '2026-11-01T00:00:00Z', 'ends_at': '2026-11-01T01:00:00Z',
+                      'fields': {'email': marker + '@example.invalid'}},
+            'record': {'event': 'request_failed', 'error_code': 'ETIMEDOUT',
+                       'fields': {'email': marker + '@example.invalid', 'authorization': marker}},
+            'locator': 'https://' + marker + ':' + marker + '@synthetic.invalid/' + marker + '?token=' + marker}
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto(BASE + '/#/investigations/' + pending['id'])
+            detail = page.get_by_role('region', name='调查详情')
+            expect(detail).to_contain_text('尚无已保存证据')
+            reply = client.post(endpoint, json=payload, headers=evidence_executor)
+            assert reply.status_code == 201
+            safe = reply.json()
+            rejected = client.post(endpoint, json={**payload, 'message': marker}, headers=evidence_executor)
+            assert rejected.status_code == 422
+            page.reload()
+            card = page.get_by_role('article', name='脱敏证据')
+            expect(card).to_contain_text(safe['source'])
+            expect(card).to_contain_text('2026-11-01 08:15:00 UTC+8')
+            expect(card).to_contain_text('查询条件')
+            expect(card).to_contain_text('ETIMEDOUT')
+            expect(card).to_contain_text('[已屏蔽]')
+            expect(card).to_contain_text(safe['redaction_note'])
+            expect(detail).to_contain_text('部分材料不可用')
+            expect(detail).to_contain_text('证据条数：1')
+            assert marker not in page.locator('body').inner_text(), '可见内容含原敏感值'
+            assert marker not in page.content(), '隐藏DOM含原敏感值'
+            assert evidence_executor['Authorization'] not in page.content(), '浏览器含执行凭证'
+            page.reload()
+            expect(card).to_contain_text(safe['snippet']['fields']['email'])
+            browser.close()
+
+
 def test_lost_create_response_can_retry_without_duplicate():
     title = f"UI重放-{uuid4().hex[:8]}"
     with sync_playwright() as p:

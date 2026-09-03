@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 from fastapi import APIRouter
@@ -13,10 +14,8 @@ class Service(BaseModel):
 
     @model_validator(mode="after")
     def valid_sources(self):
-        if any(not source.strip() or len(source) > 120 or
-               any(ord(char) < 32 or 0xD800 <= ord(char) <= 0xDFFF for char in source)
-               for source in self.source_ids):
-            raise ValueError("来源标识不能为空、包含控制字符或超过120字符")
+        if any(re.fullmatch(r'[a-zA-Z0-9_-]{1,120}', source) is None for source in self.source_ids):
+            raise ValueError("来源仅支持受控配置标识，不接受URL、查询或凭据")
         if any(ord(char) < 32 or 0xD800 <= ord(char) <= 0xDFFF for char in self.name):
             raise ValueError("服务名称包含非法字符")
         return self

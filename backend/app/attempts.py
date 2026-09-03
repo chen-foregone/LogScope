@@ -19,6 +19,7 @@ attempts = Table(
     Column("service_id", String(80)), Column("source_ids", JSON),
     Column("starts_at", DateTime(timezone=True)), Column("ends_at", DateTime(timezone=True)),
     Column("created_at", DateTime(timezone=True)), Column("status", String(20)),
+    Column("evidence_unavailable", Boolean),
 )
 executions = Table(
     "controlled_executions", metadata,
@@ -55,8 +56,10 @@ class StartAttempt(BaseModel):
 def attempt_views(connection, investigation_id):
     rows = connection.execute(select(attempts).where(attempts.c.investigation_id == investigation_id)
                               .order_by(attempts.c.created_at, attempts.c.id)).mappings().all()
+    from app.evidence import evidence_views
     return [{key: row[key] for key in ("id", "service_id", "starts_at", "ends_at", "created_at", "status")}
-            | {"execution_mode": "controlled"} for row in rows]
+            | {"execution_mode": "controlled", "evidence": evidence_views(connection, row['id']),
+               "evidence_notices": ['部分材料不可用：不符合受控输入契约，未保存原文、未纳入分析。'] if row['evidence_unavailable'] else []} for row in rows]
 
 
 def current_view(connection, row):

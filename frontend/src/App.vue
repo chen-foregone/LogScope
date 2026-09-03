@@ -2,6 +2,12 @@
 import { onMounted, onUnmounted, ref } from 'vue'
 import { Plus, ShieldCheck, TerminalSquare, Command } from 'lucide-vue-next'
 
+type Evidence = {
+  id: string; source: string; occurred_at: string
+  query: { starts_at: string; ends_at: string; fields: Record<string, string> }
+  snippet: { event: string; error_code: string; fields: Record<string, string> }
+  locator: string | null; redaction_note: string
+}
 type Investigation = {
   id: string
   title: string
@@ -10,7 +16,7 @@ type Investigation = {
   status: '待处理' | '调查中'
   severity: '未评估'
   evidence_count: number
-  attempts: { id: string; service_id: string; starts_at: string; ends_at: string; status: string; execution_mode: 'controlled' }[]
+  attempts: { id: string; service_id: string; starts_at: string; ends_at: string; status: string; execution_mode: 'controlled'; evidence: Evidence[]; evidence_notices: string[] }[]
   created_at: string
   updated_at: string
   retention_expires_at: string | null
@@ -203,7 +209,21 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
             <div v-for="attempt in selected.attempts" :key="attempt.id">
               <p>服务：{{ attempt.service_id }} · {{ attempt.status }}</p>
               <p>固定日志范围：{{ displayTime(attempt.starts_at) }} — {{ displayTime(attempt.ends_at) }}</p>
-              <p>可控执行适配器：仅接纳并校验只读上下文；未接真实日志或 Agent，无分析进度。</p>
+              <p>可控执行适配器：接纳执行身份及受控结构化证据；未接真实日志或 Agent，无分析进度。</p>
+              <h4>脱敏证据</h4>
+              <p>本轮已保存 {{ attempt.evidence.length }} 条；尚未实施去重，不表示扫描数量或覆盖完整率。</p>
+              <p v-if="!attempt.evidence.length">尚无已保存证据。</p>
+              <p v-for="notice in attempt.evidence_notices" :key="notice" role="status">{{ notice }}</p>
+              <article v-for="item in attempt.evidence" :key="item.id" aria-label="脱敏证据" class="evidence-card">
+                <dl>
+                  <dt>来源</dt><dd>{{ item.source }}</dd>
+                  <dt>发生时间</dt><dd>{{ displayTime(item.occurred_at) }}</dd>
+                  <dt>查询条件</dt><dd>{{ displayTime(item.query.starts_at) }} — {{ displayTime(item.query.ends_at) }}<pre>{{ JSON.stringify(item.query.fields, null, 2) }}</pre></dd>
+                  <dt>脱敏核验材料</dt><dd><pre>{{ JSON.stringify(item.snippet, null, 2) }}</pre></dd>
+                  <dt>来源定位</dt><dd>{{ item.locator || '未提供定位；可核验材料为上述脱敏结构化片段' }}</dd>
+                  <dt>脱敏说明</dt><dd>{{ item.redaction_note }}</dd>
+                </dl>
+              </article>
             </div>
           </template>
           <template v-else>

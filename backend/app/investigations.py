@@ -42,7 +42,7 @@ class InvestigationView(BaseModel):
     severity: Literal["未评估"]
     service: str | None
     attempts: list[dict]
-    evidence_count: Literal[0]
+    evidence_count: int
     created_at: datetime
     updated_at: datetime
     retention_expires_at: datetime | None
@@ -61,7 +61,7 @@ def representation(row, attempts=None):
            for key in ("created_at", "updated_at", "retention_expires_at")},
         "status": attempts[-1]["status"] if attempts else "待处理", "severity": "未评估",
         "service": attempts[-1]["service_id"] if attempts else None,
-        "attempts": attempts, "evidence_count": 0,
+        "attempts": attempts, "evidence_count": len(attempts[-1]['evidence']) if attempts else 0,
     }
 
 
