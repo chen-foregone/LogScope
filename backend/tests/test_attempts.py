@@ -453,6 +453,7 @@ def test_started_attempt_survives_real_process_restart(database_url, tmp_path):
         accepted = client.get(controlled, headers=auth).json()
         from test_evidence import material
         payload = material()
+        payload['identity'] = {'kind': 'record', 'record_id': uuid4().hex}
         payload['occurred_at'] = attempt['starts_at']
         payload['query']['starts_at'] = attempt['starts_at']
         payload['query']['ends_at'] = attempt['ends_at']
@@ -467,10 +468,10 @@ def test_started_attempt_survives_real_process_restart(database_url, tmp_path):
         assert replay.json() == record
         assert client.get(controlled, headers=auth).json() == accepted
         repeated = client.post(endpoint, json=payload, headers=auth)
-        assert repeated.status_code == 201
-        assert repeated.json()['snippet'] == saved.json()['snippet']
-        assert repeated.json()['locator'] == saved.json()['locator']
-        assert client.get(path).json()['evidence_count'] == 2
+        assert repeated.status_code == 200
+        assert repeated.json() == saved.json()
+        assert client.get(path).json() == record
+        assert client.get(path).json()['evidence_count'] == 1
 
 
 def test_configured_services_are_available_without_secrets(database_url, tmp_path):

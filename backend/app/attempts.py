@@ -57,9 +57,17 @@ def attempt_views(connection, investigation_id):
     rows = connection.execute(select(attempts).where(attempts.c.investigation_id == investigation_id)
                               .order_by(attempts.c.created_at, attempts.c.id)).mappings().all()
     from app.evidence import evidence_views
-    return [{key: row[key] for key in ("id", "service_id", "starts_at", "ends_at", "created_at", "status")}
-            | {"execution_mode": "controlled", "evidence": evidence_views(connection, row['id']),
-               "evidence_notices": ['部分材料不可用：不符合受控输入契约，未保存原文、未纳入分析。'] if row['evidence_unavailable'] else []} for row in rows]
+    views = []
+    for row in rows:
+        saved = evidence_views(connection, row['id'])
+        notices = ['部分材料不可用：不符合受控输入契约，未保存原文、未纳入分析。'] if row['evidence_unavailable'] else []
+        if any(item['identity_status'] != 'reliable' for item in saved):
+            notices.append('可能重复：部分证据缺少可靠原始日志身份，已逐条保留，未按内容或时间合并。')
+        if any(item['identity_status'] == 'legacy_unknown' for item in saved):
+            notices.append('升级前证据未声明可靠身份：历史记录原样保留，未倒推身份或合并。')
+        views.append({key: row[key] for key in ('id', 'service_id', 'starts_at', 'ends_at', 'created_at', 'status')}
+            | {'execution_mode': 'controlled', 'evidence': saved, 'evidence_count': len(saved), 'evidence_notices': notices})
+    return views
 
 
 def current_view(connection, row):

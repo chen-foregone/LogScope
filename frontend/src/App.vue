@@ -16,7 +16,7 @@ type Investigation = {
   status: '待处理' | '调查中'
   severity: '未评估'
   evidence_count: number
-  attempts: { id: string; service_id: string; starts_at: string; ends_at: string; status: string; execution_mode: 'controlled'; evidence: Evidence[]; evidence_notices: string[] }[]
+  attempts: { id: string; service_id: string; starts_at: string; ends_at: string; status: string; execution_mode: 'controlled'; evidence_count: number; evidence: Evidence[]; evidence_notices: string[] }[]
   created_at: string
   updated_at: string
   retention_expires_at: string | null
@@ -211,7 +211,7 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
               <p>固定日志范围：{{ displayTime(attempt.starts_at) }} — {{ displayTime(attempt.ends_at) }}</p>
               <p>可控执行适配器：接纳执行身份及受控结构化证据；未接真实日志或 Agent，无分析进度。</p>
               <h4>脱敏证据</h4>
-              <p>本轮已保存 {{ attempt.evidence.length }} 条；尚未实施去重，不表示扫描数量或覆盖完整率。</p>
+              <p>本轮证据条数：{{ attempt.evidence_count }}；可靠身份重复只计一次，缺少可靠身份逐条保留。不表示日志扫描量、故障数、根因数或覆盖完整率。</p>
               <p v-if="!attempt.evidence.length">尚无已保存证据。</p>
               <p v-for="notice in attempt.evidence_notices" :key="notice" role="status">{{ notice }}</p>
               <article v-for="item in attempt.evidence" :key="item.id" aria-label="脱敏证据" class="evidence-card">
@@ -251,7 +251,7 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
             <el-table-column label="服务" min-width="130"><template #default="{ row }">{{ row.service || '未选择服务' }}</template></el-table-column>
             <el-table-column prop="severity" label="严重程度" width="100" />
             <el-table-column prop="status" label="状态" width="100" />
-            <el-table-column prop="evidence_count" label="证据条数" width="100" />
+            <el-table-column label="证据条数" width="140"><template #default="{ row }">{{ row.evidence_count }}<div v-if="row.attempts.at(-1)?.evidence_notices.some((notice: string) => notice.startsWith('可能重复'))" class="incident-id">可能重复</div></template></el-table-column>
             <el-table-column label="最后更新时间" min-width="240"><template #default="{ row }">{{ displayTime(row.updated_at) }}</template></el-table-column>
           </el-table></div>
           <div class="table-footer">显示 {{ investigations.length }} 条调查记录</div>

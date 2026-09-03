@@ -257,11 +257,29 @@ def test_evidence_cards_refresh_without_raw_sensitive_content(evidence_executor)
             expect(card).to_contain_text(safe['redaction_note'])
             expect(detail).to_contain_text('部分材料不可用')
             expect(detail).to_contain_text('证据条数：1')
+            expect(detail).to_contain_text('可能重复')
+            expect(detail).to_contain_text('本轮证据条数：1')
+            expect(detail).not_to_contain_text('尚未实施去重')
             assert marker not in page.locator('body').inner_text(), '可见内容含原敏感值'
             assert marker not in page.content(), '隐藏DOM含原敏感值'
             assert evidence_executor['Authorization'] not in page.content(), '浏览器含执行凭证'
             page.reload()
             expect(card).to_contain_text(safe['snippet']['fields']['email'])
+            reliable = {**payload, 'identity': {'kind': 'record', 'record_id': marker}}
+            first = client.post(endpoint, json=reliable, headers=evidence_executor)
+            repeated = client.post(endpoint, json=reliable, headers=evidence_executor)
+            assert first.status_code == 201 and repeated.status_code == 200
+            assert first.json() == repeated.json()
+            assert client.post(endpoint, json=payload, headers=evidence_executor).status_code == 201
+            page.reload()
+            expect(card).to_have_count(3)
+            expect(detail).to_contain_text('本轮证据条数：3')
+            expect(detail).to_contain_text('可能重复')
+            assert marker not in page.content(), '可靠身份原值进入浏览器'
+            page.get_by_role('button', name='返回列表').click()
+            row = page.get_by_role('row').filter(has=page.get_by_role('button', name=pending['title'], exact=True))
+            expect(row).to_contain_text('3')
+            expect(row).to_contain_text('可能重复')
             browser.close()
 
 

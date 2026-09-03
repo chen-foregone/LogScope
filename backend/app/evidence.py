@@ -6,9 +6,9 @@ from datetime import datetime, timezone
 from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, Header, HTTPException, Request
+from fastapi import APIRouter, Header, HTTPException, Request, Response
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError, field_validator
-from sqlalchemy import Column, DateTime, ForeignKey, JSON, LargeBinary, Table, Uuid, insert, select, update
+from sqlalchemy import Column, DateTime, ForeignKey, JSON, LargeBinary, Table, Uuid, String, UniqueConstraint, insert, select, update
 
 from app.attempts import attempts, executions
 from app.investigations import investigations, metadata
@@ -19,7 +19,10 @@ redaction_keys = Table('investigation_redaction_keys', metadata,
 evidence = Table('evidence', metadata,
     Column('id', Uuid, primary_key=True),
     Column('attempt_id', Uuid, ForeignKey('attempts.id'), nullable=False),
-    Column('created_at', DateTime(timezone=True), nullable=False), Column('material', JSON, nullable=False))
+    Column('created_at', DateTime(timezone=True), nullable=False), Column('material', JSON, nullable=False),
+    Column('identity_key', String(64)), Column('content_key', String(64)),
+    Column('identity_status', String(24), nullable=False),
+    UniqueConstraint('attempt_id', 'identity_key', name='uq_evidence_attempt_identity'))
 
 CREDENTIALS = {'password', 'token', 'key', 'session', 'authorization', 'cookie', 'secret'}
 NOTE = '受控结构化事件v1：凭据屏蔽，身份与关联标识使用调查内代号，定位整体不可逆代号化；不接收自由文本或未知字段。代号定位须由受控来源重新核验，不能直接打开原链接。'
@@ -65,6 +68,21 @@ class Record(StrictInput):
     fields: Fields
 
 
+class RecordIdentity(StrictInput):
+    kind: Literal['record']
+    record_id: str = Field(min_length=1, max_length=4096)
+
+    _bounded = field_validator('record_id')(Fields.bounded_value.__func__)
+
+
+class FileIdentity(StrictInput):
+    kind: Literal['file']
+    file_id: str = Field(min_length=1, max_length=4096)
+    offset: int = Field(ge=0, le=9223372036854775807)
+
+    _bounded = field_validator('file_id')(Fields.bounded_value.__func__)
+
+
 class Material(StrictInput):
     format: Literal['controlled-event-v1']
     source_id: str = Field(min_length=1, max_length=120)
@@ -72,19 +90,20 @@ class Material(StrictInput):
     query: Query
     record: Record
     locator: str | None = Field(default=None, min_length=1, max_length=4096)
+    identity: Annotated[RecordIdentity | FileIdentity, Field(discriminator='kind')] | None = None
 
 
 def evidence_views(connection, attempt_id):
     rows = connection.execute(select(evidence).where(evidence.c.attempt_id == attempt_id)
                               .order_by(evidence.c.created_at, evidence.c.id)).mappings()
-    return [dict(row['material'], id=str(row['id'])) for row in rows]
+    return [dict(row['material'], id=str(row['id']), identity_status=row['identity_status']) for row in rows]
 
 
 def evidence_router(engine, credential):
     router = APIRouter(prefix='/executor', include_in_schema=False)
 
     @router.post('/investigations/{investigation_id}/attempts/{attempt_id}/executions/{execution_id}/evidence', status_code=201)
-    async def save(investigation_id: UUID, attempt_id: UUID, execution_id: UUID, request: Request,
+    async def save(investigation_id: UUID, attempt_id: UUID, execution_id: UUID, request: Request, response: Response,
                    authorization: Annotated[str | None, Header()] = None):
         if not credential or not authorization or not secrets.compare_digest(
                 authorization.encode('utf-8'), f'Bearer {credential}'.encode('utf-8')):
@@ -143,9 +162,23 @@ def evidence_router(engine, credential):
                                 'fields': redact(payload.record.fields)},
                     'locator': '定位代号-' + alias('locator', payload.locator) if payload.locator else None,
                     'redaction_note': NOTE}
+                identity_key = alias('evidence-identity-v1', [payload.source_id, payload.identity.model_dump()]) if payload.identity else None
+                # 比较原始受控事件而非脱敏片段；查询与定位是获取上下文，不是原始事件内容。
+                content_key = alias('evidence-content-v1', [result['occurred_at'], payload.record.model_dump()]) if identity_key else None
+                if identity_key:
+                    existing = connection.execute(select(evidence).where(
+                        evidence.c.attempt_id == attempt_id, evidence.c.identity_key == identity_key)).mappings().first()
+                    if existing:
+                        if existing['content_key'] != content_key:
+                            raise HTTPException(409, '证据身份冲突：同一可靠身份的原始事件内容发生变化；旧证据保留，本次未纳入')
+                        response.status_code = 200
+                        return dict(existing['material'], id=str(existing['id']), identity_status=existing['identity_status'])
+                status = 'reliable' if identity_key else 'unavailable'
                 identity = uuid4()
                 now = datetime.now(timezone.utc)
-                connection.execute(insert(evidence).values(id=identity, attempt_id=attempt_id, created_at=now, material=result))
+                connection.execute(insert(evidence).values(id=identity, attempt_id=attempt_id, created_at=now, material=result,
+                    identity_key=identity_key, content_key=content_key, identity_status=status))
+                result['identity_status'] = status
                 connection.execute(update(investigations).where(investigations.c.id == investigation_id).values(updated_at=now))
                 result['id'] = str(identity)
             return result

@@ -18,7 +18,7 @@ DATABASE_URL = os.environ.get(
 
 
 @pytest.fixture
-def database_url():
+def database_url(request):
     # 每例独立 schema，仅安排环境；业务事实全部经 HTTP 断言。
     schema = f"test_{uuid4().hex}"
     engine = create_engine(DATABASE_URL)
@@ -26,7 +26,7 @@ def database_url():
         connection.execute(text(f'CREATE SCHEMA "{schema}"'))
     url = f"{DATABASE_URL}?options=-csearch_path%3D{schema}"
     result = subprocess.run(
-        [sys.executable, "-m", "alembic", "-c", str(ROOT / "backend/alembic.ini"), "upgrade", "head"],
+        [sys.executable, "-m", "alembic", "-c", str(ROOT / "backend/alembic.ini"), "upgrade", getattr(request, 'param', 'head')],
         cwd=ROOT, env={**os.environ, "DATABASE_URL": url, "PYTHONPATH": str(ROOT / "backend")},
         capture_output=True, text=True,
     )
