@@ -20,6 +20,7 @@ attempts = Table(
     Column("starts_at", DateTime(timezone=True)), Column("ends_at", DateTime(timezone=True)),
     Column("created_at", DateTime(timezone=True)), Column("status", String(20)),
     Column("evidence_unavailable", Boolean),
+    Column("ended_at", DateTime(timezone=True)), Column("result", String(24)), Column("end_reason", String(32)),
 )
 executions = Table(
     "controlled_executions", metadata,
@@ -65,8 +66,11 @@ def attempt_views(connection, investigation_id):
             notices.append('可能重复：部分证据缺少可靠原始日志身份，已逐条保留，未按内容或时间合并。')
         if any(item['identity_status'] == 'legacy_unknown' for item in saved):
             notices.append('升级前证据未声明可靠身份：历史记录原样保留，未倒推身份或合并。')
-        views.append({key: row[key] for key in ('id', 'service_id', 'starts_at', 'ends_at', 'created_at', 'status')}
-            | {'execution_mode': 'controlled', 'evidence': saved, 'evidence_count': len(saved), 'evidence_notices': notices})
+        from app.conclusions import conclusion_views
+        history = conclusion_views(connection, row['id'])
+        views.append({key: row[key] for key in ('id', 'service_id', 'starts_at', 'ends_at', 'created_at', 'status', 'ended_at', 'result', 'end_reason')}
+            | {'execution_mode': 'controlled', 'evidence': saved, 'evidence_count': len(saved), 'evidence_notices': notices,
+               'conclusions': history, 'conclusion': history[-1] if history else None})
     return views
 
 
@@ -112,6 +116,8 @@ def attempt_router(engine, services, adapter):
             if connection.execute(select(attempts.c.id).where(
                     attempts.c.investigation_id == investigation_id, attempts.c.status == "调查中")).first():
                 raise HTTPException(409, "已有调查中轮次，不能修改服务或范围，也不能重复启动")
+            if connection.execute(select(attempts.c.id).where(attempts.c.investigation_id == investigation_id)).first():
+                raise HTTPException(409, "历史轮次已结束；手动新轮契约由后续工单09提供")
             service = services.get(payload.service_id)
             if service is None:
                 raise HTTPException(422, "服务未配置或无效，尚未启动")
@@ -134,7 +140,7 @@ def attempt_router(engine, services, adapter):
 
     @router.get("/{investigation_id}/attempts/{attempt_id}")
     def detail(investigation_id: UUID, attempt_id: UUID):
-        with engine.connect() as connection:
+        with engine.connect().execution_options(isolation_level="REPEATABLE READ") as connection:
             views = attempt_views(connection, investigation_id)
             for view in views:
                 if view["id"] == attempt_id:

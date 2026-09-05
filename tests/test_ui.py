@@ -283,6 +283,69 @@ def test_evidence_cards_refresh_without_raw_sensitive_content(evidence_executor)
             browser.close()
 
 
+@pytest.mark.parametrize('confirmed', [False, True])
+def test_conclusions_history_completed_result_and_evidence_navigation(evidence_executor, confirmed):
+    with httpx.Client(base_url=BASE, trust_env=False) as client:
+        pending = client.post('/api/investigations', json={'title': 'UI结论-' + uuid4().hex[:8]},
+                              headers={'Idempotency-Key': str(uuid4())}).json()
+        path = '/api/investigations/' + pending['id']
+        record = client.post(path + '/attempts', json={'service_id': 'orders',
+            'starts_at': '2026-11-01T00:00:00Z', 'ends_at': '2026-11-01T01:00:00Z'},
+            headers={'Idempotency-Key': str(uuid4())}).json()
+        attempt = record['attempts'][0]['id']
+        base = f'/api/executor/investigations/{pending["id"]}/attempts/{attempt}/executions'
+        identity = client.get(base, headers=evidence_executor).json()['executions'][0]['id']
+        endpoint = base + '/' + identity
+        payload = {'format': 'controlled-event-v1', 'source_id': 'controlled-orders',
+            'occurred_at': '2026-11-01T00:15:00Z',
+            'query': {'starts_at': '2026-11-01T00:00:00Z', 'ends_at': '2026-11-01T01:00:00Z', 'fields': {}},
+            'record': {'event': 'request_failed', 'error_code': 'ETIMEDOUT', 'fields': {}}}
+        saved = client.post(endpoint + '/evidence', json=payload, headers=evidence_executor).json()
+        analysis = {'format': 'controlled-analysis-v1', 'kind': 'hypothesis',
+            'mechanism': 'dependency_error_propagation', 'evidence_ids': [saved['id']],
+            'missing': ['causal_trace'], 'expected_version': 0, 'finish': False}
+        assert client.post(endpoint + '/conclusions', json=analysis,
+            headers={**evidence_executor, 'Idempotency-Key': str(uuid4())}).status_code == 201
+        if confirmed:
+            payload['record']['causal_trace'] = {'format': 'observed-propagation-v1', 'dependency_error': 'ETIMEDOUT',
+                'propagated_error': 'ETIMEDOUT', 'request_outcome': 'failed_by_dependency',
+                'local_rejection': 'excluded_by_trace', 'independent_failure': 'excluded_by_trace',
+                'contradiction': 'none_observed'}
+            causal = client.post(endpoint + '/evidence', json=payload, headers=evidence_executor).json()
+            analysis.update(kind='confirmed', expected_version=1, finish=True, evidence_ids=[causal['id']], missing=[])
+        else:
+            analysis.update(kind='undetermined', mechanism=None, expected_version=1, finish=True)
+        assert client.post(endpoint + '/conclusions', json=analysis,
+            headers={**evidence_executor, 'Idempotency-Key': str(uuid4())}).status_code == 201
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            page = browser.new_page()
+            page.goto(BASE + '/#/investigations/' + pending['id'])
+            detail = page.get_by_role('region', name='调查详情')
+            expect(detail).to_contain_text('已确认根因' if confirmed else '未确定根因')
+            expect(detail).to_contain_text('已完成')
+            expect(detail).to_contain_text('结束时间')
+            expect(detail).to_contain_text('结论版本 1')
+            expect(detail).to_contain_text('结论版本 2')
+            expect(detail).to_contain_text('待验证假设')
+            expect(detail).to_contain_text('缺失证据')
+            if confirmed:
+                expect(detail).to_contain_text('因果机制')
+                expect(detail).to_contain_text('替代解释')
+                expect(detail).to_contain_text('关键矛盾')
+                expect(detail).to_contain_text('非科学证明')
+            page.get_by_role('link', name='查看证据 ' + saved['id']).first.click()
+            evidence_card = page.locator('[id="evidence-' + saved['id'] + '"]')
+            expect(evidence_card).to_be_in_viewport()
+            expect(evidence_card).to_contain_text('ETIMEDOUT')
+            expect(page.get_by_role('button', name='强制确认根因')).to_have_count(0)
+            assert identity not in page.content()
+            assert evidence_executor['Authorization'] not in page.content()
+            page.reload()
+            expect(detail).to_contain_text('已确认根因' if confirmed else '未确定根因')
+            browser.close()
+
+
 def test_lost_create_response_can_retry_without_duplicate():
     title = f"UI重放-{uuid4().hex[:8]}"
     with sync_playwright() as p:

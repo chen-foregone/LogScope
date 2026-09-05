@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.investigations import investigation_router
 
 
-def create_app(database_url: str | None = None, *, services_file=None, executor_credential=None, execution_adapter=None) -> FastAPI:
+def create_app(database_url: str | None = None, *, services_file=None, executor_credential=None, execution_adapter=None, clock=None) -> FastAPI:
     from app.services import load_services, service_router
     services = load_services(services_file if services_file is not None else settings.services_file)
     engine = create_engine(database_url or settings.database_url, pool_pre_ping=True, hide_parameters=True)
@@ -25,8 +25,8 @@ def create_app(database_url: str | None = None, *, services_file=None, executor_
     @application.exception_handler(RequestValidationError)
     async def validation_error_handler(request, exc):
         # 不回显非法原始输入，避免孤立代理码点使错误响应编码失败。
-        detail = [{"type": error["type"], "loc": error["loc"], "msg": error["msg"]}
-                  for error in exc.errors()]
+        detail = [{"type": "request_invalid", "loc": ["request"],
+                   "msg": "请求参数无效；日志范围须带时区且不超过24小时，不接受未知字段"}]
         return Response(status_code=422, media_type="application/json",
                         content=json.dumps({"detail": detail}, ensure_ascii=True))
 
@@ -38,6 +38,10 @@ def create_app(database_url: str | None = None, *, services_file=None, executor_
     from app.attempts import ControlledExecutionAdapter, attempt_router
     from app.execution import execution_router
     from app.evidence import evidence_router
+    from app.conclusions import conclusion_router
+    from datetime import datetime, timezone
+    application.include_router(conclusion_router(engine, executor_credential if executor_credential is not None else settings.executor_credential,
+        clock or (lambda: datetime.now(timezone.utc))), prefix=settings.api_prefix)
     application.include_router(evidence_router(engine, executor_credential if executor_credential is not None else settings.executor_credential), prefix=settings.api_prefix)
     application.include_router(execution_router(engine, executor_credential if executor_credential is not None else settings.executor_credential), prefix=settings.api_prefix)
     application.include_router(attempt_router(engine, services, execution_adapter or ControlledExecutionAdapter()), prefix=settings.api_prefix)

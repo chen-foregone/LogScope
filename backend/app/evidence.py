@@ -62,10 +62,22 @@ class Query(StrictInput):
     fields: Fields
 
 
+class CausalTrace(StrictInput):
+    # 可信受控生产者声明的同调用错误传播观测，不从时间/数量推断。
+    format: Literal['observed-propagation-v1']
+    dependency_error: Literal['ETIMEDOUT', 'ECONNREFUSED', 'EACCES', 'HTTP_500', 'HTTP_502', 'HTTP_503']
+    propagated_error: Literal['ETIMEDOUT', 'ECONNREFUSED', 'EACCES', 'HTTP_500', 'HTTP_502', 'HTTP_503']
+    request_outcome: Literal['failed_by_dependency', 'independent_failure', 'unknown']
+    local_rejection: Literal['excluded_by_trace', 'unresolved']
+    independent_failure: Literal['excluded_by_trace', 'unresolved']
+    contradiction: Literal['none_observed', 'unresolved']
+
+
 class Record(StrictInput):
     event: Literal['request_failed', 'request_completed', 'dependency_failed']
     error_code: Literal['ETIMEDOUT', 'ECONNREFUSED', 'EACCES', 'HTTP_400', 'HTTP_401', 'HTTP_403', 'HTTP_404', 'HTTP_429', 'HTTP_500', 'HTTP_502', 'HTTP_503', 'NONE']
     fields: Fields
+    causal_trace: CausalTrace | None = None
 
 
 class RecordIdentity(StrictInput):
@@ -162,9 +174,11 @@ def evidence_router(engine, credential):
                                 'fields': redact(payload.record.fields)},
                     'locator': '定位代号-' + alias('locator', payload.locator) if payload.locator else None,
                     'redaction_note': NOTE}
+                if payload.record.causal_trace is not None:
+                    result['snippet']['causal_trace'] = payload.record.causal_trace.model_dump()
                 identity_key = alias('evidence-identity-v1', [payload.source_id, payload.identity.model_dump()]) if payload.identity else None
                 # 比较原始受控事件而非脱敏片段；查询与定位是获取上下文，不是原始事件内容。
-                content_key = alias('evidence-content-v1', [result['occurred_at'], payload.record.model_dump()]) if identity_key else None
+                content_key = alias('evidence-content-v1', [result['occurred_at'], payload.record.model_dump(exclude={'causal_trace'} if payload.record.causal_trace is None else set())]) if identity_key else None
                 if identity_key:
                     existing = connection.execute(select(evidence).where(
                         evidence.c.attempt_id == attempt_id, evidence.c.identity_key == identity_key)).mappings().first()

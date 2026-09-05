@@ -8,15 +8,25 @@ type Evidence = {
   snippet: { event: string; error_code: string; fields: Record<string, string> }
   locator: string | null; redaction_note: string
 }
+type Conclusion = {
+  id: string; version: number; created_at: string; kind: 'hypothesis' | 'confirmed' | 'undetermined'
+  verification: string; mechanism: string | null; evidence_ids: string[]; missing: string[]; boundary: string
+  phenomenon?: string; causal_chain?: string; alternatives?: string; contradictions?: string
+}
+const conclusionLabels = { hypothesis: '待验证假设', confirmed: '已确认根因', undetermined: '未确定根因' }
+const missingLabels: Record<string, string> = { causal_trace: '同调用因果传播轨迹', dependency_observation: '依赖调用观测', alternative_exclusion: '替代解释排除依据' }
+function locateEvidence(id: string) {
+  document.getElementById(`evidence-${id}`)?.scrollIntoView({ block: 'center' })
+}
 type Investigation = {
   id: string
   title: string
   description: string
   service: string | null
-  status: '待处理' | '调查中'
+  status: '待处理' | '调查中' | '已完成'
   severity: '未评估'
   evidence_count: number
-  attempts: { id: string; service_id: string; starts_at: string; ends_at: string; status: string; execution_mode: 'controlled'; evidence_count: number; evidence: Evidence[]; evidence_notices: string[] }[]
+  attempts: { id: string; service_id: string; starts_at: string; ends_at: string; status: string; execution_mode: 'controlled'; evidence_count: number; evidence: Evidence[]; evidence_notices: string[]; ended_at: string | null; result: string | null; end_reason: string | null; conclusion: Conclusion | null; conclusions: Conclusion[] }[]
   created_at: string
   updated_at: string
   retention_expires_at: string | null
@@ -210,11 +220,30 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
               <p>服务：{{ attempt.service_id }} · {{ attempt.status }}</p>
               <p>固定日志范围：{{ displayTime(attempt.starts_at) }} — {{ displayTime(attempt.ends_at) }}</p>
               <p>可控执行适配器：接纳执行身份及受控结构化证据；未接真实日志或 Agent，无分析进度。</p>
+              <p v-if="attempt.ended_at">结束时间：{{ displayTime(attempt.ended_at) }} · 正常排查结束</p>
+              <p>调查结果：{{ attempt.result || '尚未结束' }}；已完成不代表已确认根因。</p>
+              <h4>当前结论</h4>
+              <p v-if="attempt.conclusion">版本 {{ attempt.conclusion.version }} · {{ conclusionLabels[attempt.conclusion.kind] }}</p>
+              <p v-else>尚无结论。</p>
+              <article v-for="conclusion in attempt.conclusions" :key="conclusion.id" aria-label="结论版本" class="evidence-card">
+                <h4>结论版本 {{ conclusion.version }} · {{ conclusionLabels[conclusion.kind] }}</h4>
+                <p>{{ displayTime(conclusion.created_at) }} · 核验状态：{{ conclusion.verification === 'supported_controlled_trace' ? '受控轨迹支持（非普遍证明）' : '证据不足' }}</p>
+                <p v-if="conclusion.mechanism">候选机制：依赖错误传播导致请求失败</p>
+                <p v-if="conclusion.phenomenon">故障现象：{{ conclusion.phenomenon }}</p>
+                <p v-if="conclusion.causal_chain">因果机制：{{ conclusion.causal_chain }}</p>
+                <p v-if="conclusion.alternatives">替代解释：{{ conclusion.alternatives }}</p>
+                <p v-if="conclusion.contradictions">关键矛盾：{{ conclusion.contradictions }}</p>
+                <p>现有依据：<span v-if="!conclusion.evidence_ids.length">无已纳入证据，不表示没有故障。</span></p>
+                <p v-for="id in conclusion.evidence_ids" :key="id"><a :href="`#evidence-${id}`" @click.prevent="locateEvidence(id)">查看证据 {{ id }}</a></p>
+                <p v-if="conclusion.missing.length">缺失证据：{{ conclusion.missing.map(item => missingLabels[item]).join('、') }}</p>
+                <p>{{ conclusion.boundary }}</p>
+                <p>修复建议仅供参考，不执行环境写操作。</p>
+              </article>
               <h4>脱敏证据</h4>
               <p>本轮证据条数：{{ attempt.evidence_count }}；可靠身份重复只计一次，缺少可靠身份逐条保留。不表示日志扫描量、故障数、根因数或覆盖完整率。</p>
               <p v-if="!attempt.evidence.length">尚无已保存证据。</p>
               <p v-for="notice in attempt.evidence_notices" :key="notice" role="status">{{ notice }}</p>
-              <article v-for="item in attempt.evidence" :key="item.id" aria-label="脱敏证据" class="evidence-card">
+              <article v-for="item in attempt.evidence" :id="`evidence-${item.id}`" :key="item.id" aria-label="脱敏证据" class="evidence-card">
                 <dl>
                   <dt>来源</dt><dd>{{ item.source }}</dd>
                   <dt>发生时间</dt><dd>{{ displayTime(item.occurred_at) }}</dd>

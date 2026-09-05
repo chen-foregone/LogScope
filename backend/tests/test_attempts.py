@@ -10,7 +10,7 @@ from test_investigations import database_url
 
 def configured_client(url, tmp_path, **options):
     from app.main import create_app
-    config = tmp_path / "services.json"
+    config = tmp_path / f"services-{uuid4().hex}.json"
     config.write_text('{"services":[{"id":"orders","name":"订单服务","source_ids":["controlled-orders"]}]}', encoding="utf-8")
     return TestClient(create_app(database_url=url, services_file=config, **options))
 
@@ -472,6 +472,19 @@ def test_started_attempt_survives_real_process_restart(database_url, tmp_path):
         assert repeated.json() == saved.json()
         assert client.get(path).json() == record
         assert client.get(path).json()['evidence_count'] == 1
+        from test_conclusions import proposal
+        conclusion_endpoint = endpoint.removesuffix('/evidence') + '/conclusions'
+        conclusion_headers = {**auth, 'Idempotency-Key': str(uuid4())}
+        completed = client.post(conclusion_endpoint, json=proposal(), headers=conclusion_headers)
+        assert completed.status_code == 201
+        finished = client.get(path).json()
+    with server() as client:
+        assert client.get(path).json() == finished
+        assert finished['status'] == '已完成'
+        assert client.post(path + '/attempts', json={'service_id': 'orders'}, headers=headers).json() == finished
+        assert client.post(conclusion_endpoint, json=proposal(), headers=conclusion_headers).json() == completed.json()
+        assert client.post(endpoint, json=payload, headers=auth).status_code == 403
+        assert client.get(controlled, headers=auth).status_code == 403
 
 
 def test_configured_services_are_available_without_secrets(database_url, tmp_path):
