@@ -76,6 +76,10 @@ def conclusion_router(engine, credential, clock):
                     return replay['material']
                 if row['status'] != '调查中' or not row['valid']:
                     raise HTTPException(403, '执行身份或轮次无效')
+                from app.queries import queries
+                if payload.finish and connection.execute(select(queries.c.id).where(
+                        queries.c.attempt_id == attempt_id, queries.c.active.is_(True))).first():
+                    raise HTTPException(409, '本轮查询尚未确认退出，不能结束调查')
                 history = conclusion_views(connection, attempt_id)
                 if payload.expected_version != len(history):
                     raise HTTPException(409, '结论版本已变化，请读取当前版本')

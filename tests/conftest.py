@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(scope='session', autouse=True)
-def evidence_executor():
+def evidence_executor(tmp_path_factory):
     # UI必须先用全新隔离schema真实迁移，再启动API/Vite；凭证仅存在进程内。
     database = os.environ.get('TEST_DATABASE_URL', 'postgresql+psycopg://logscope_test:local_test_only@127.0.0.1:55433/logscope_test')
     from sqlalchemy.engine import make_url
@@ -36,10 +36,28 @@ def evidence_executor():
     migration = subprocess.run([sys.executable, '-m', 'alembic', '-c', 'backend/alembic.ini', 'upgrade', 'head'],
                                cwd=ROOT, env=env, capture_output=True)
     assert migration.returncode == 0, 'UI隔离schema真实迁移失败'
+    fixture_dir = tmp_path_factory.mktemp('query_ui')
+    import json
+    config = fixture_dir / 'services.json'
+    config.write_text(json.dumps({'services': [
+        {'id': 'orders', 'name': '订单服务（仅可控适配）', 'source_ids': ['controlled-orders']},
+        {'id': 'query-mixed', 'name': '混合覆盖测试', 'source_ids': ['ui-limited', 'ui-healthy']}]}), encoding='utf-8')
+    env['SERVICES_FILE'] = str(config)
     processes = []
     try:
-        processes.append(subprocess.Popen([sys.executable, '-m', 'uvicorn', 'app.main:app', '--app-dir', 'backend',
-                                          '--host', '127.0.0.1', '--port', '8000', '--no-access-log'],
+        startup = '''
+import uvicorn
+from app.main import create_app
+from app.queries import SourceFailure
+class Limited:
+    async def query(self, **scope):
+        raise SourceFailure('rate_limited')
+class Healthy:
+    async def query(self, **scope):
+        return None
+uvicorn.run(create_app(query_sources={'ui-limited': Limited(), 'ui-healthy': Healthy()}), host='127.0.0.1', port=8000, access_log=False)
+'''
+        processes.append(subprocess.Popen([sys.executable, '-c', startup],
                                          cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
         processes.append(subprocess.Popen(['node', 'node_modules/vite/bin/vite.js', '--host', '127.0.0.1',
                                           '--port', '5173', '--strictPort'], cwd=ROOT, env=env,

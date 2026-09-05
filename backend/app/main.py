@@ -11,7 +11,7 @@ from app.core.config import settings
 from app.investigations import investigation_router
 
 
-def create_app(database_url: str | None = None, *, services_file=None, executor_credential=None, execution_adapter=None, clock=None) -> FastAPI:
+def create_app(database_url: str | None = None, *, services_file=None, executor_credential=None, execution_adapter=None, clock=None, query_sources=None, query_schedule=None) -> FastAPI:
     from app.services import load_services, service_router
     services = load_services(services_file if services_file is not None else settings.services_file)
     engine = create_engine(database_url or settings.database_url, pool_pre_ping=True, hide_parameters=True)
@@ -40,6 +40,9 @@ def create_app(database_url: str | None = None, *, services_file=None, executor_
     from app.evidence import evidence_router
     from app.conclusions import conclusion_router
     from datetime import datetime, timezone
+    from app.queries import QuerySchedule, query_router
+    application.include_router(query_router(engine, executor_credential if executor_credential is not None else settings.executor_credential,
+        query_sources or {}, clock or (lambda: datetime.now(timezone.utc)), query_schedule or QuerySchedule()), prefix=settings.api_prefix)
     application.include_router(conclusion_router(engine, executor_credential if executor_credential is not None else settings.executor_credential,
         clock or (lambda: datetime.now(timezone.utc))), prefix=settings.api_prefix)
     application.include_router(evidence_router(engine, executor_credential if executor_credential is not None else settings.executor_credential), prefix=settings.api_prefix)

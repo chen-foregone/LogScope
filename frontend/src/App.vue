@@ -13,6 +13,10 @@ type Conclusion = {
   verification: string; mechanism: string | null; evidence_ids: string[]; missing: string[]; boundary: string
   phenomenon?: string; causal_chain?: string; alternatives?: string; contradictions?: string
 }
+type QuerySource = { source: string; state: string; attempts: number; reason: string | null; retry_after_seconds?: number | null; failures: { reason: string; attempt: number; wait_seconds: number | null }[] }
+type QueryRun = { id: string; status: string; sources: QuerySource[] }
+const queryStates: Record<string, string> = { pending: '尚未查询', querying: '正在查询', waiting: '受限等待', succeeded: '查询成功', unavailable: '来源缺失', skipped: '跳过查询（来源缺失）' }
+const queryReasons: Record<string, string> = { network: '临时网络故障', timeout: '单次查询30秒超时', permission: '权限不足', credentials: '凭据无效', parameters: '查询参数无效', rate_limited: '来源限流', inflight: '来源已有在途查询，等待退出后再试', not_configured: '未配置受控查询适配器', adapter_error: '适配器能力或返回不符合受控契约' }
 const conclusionLabels = { hypothesis: '待验证假设', confirmed: '已确认根因', undetermined: '未确定根因' }
 const missingLabels: Record<string, string> = { causal_trace: '同调用因果传播轨迹', dependency_observation: '依赖调用观测', alternative_exclusion: '替代解释排除依据' }
 function locateEvidence(id: string) {
@@ -23,10 +27,10 @@ type Investigation = {
   title: string
   description: string
   service: string | null
-  status: '待处理' | '调查中' | '已完成'
+  status: '待处理' | '调查中' | '已完成' | '失败'
   severity: '未评估'
   evidence_count: number
-  attempts: { id: string; service_id: string; starts_at: string; ends_at: string; status: string; execution_mode: 'controlled'; evidence_count: number; evidence: Evidence[]; evidence_notices: string[]; ended_at: string | null; result: string | null; end_reason: string | null; conclusion: Conclusion | null; conclusions: Conclusion[] }[]
+  attempts: { id: string; service_id: string; starts_at: string; ends_at: string; status: string; execution_mode: 'controlled'; evidence_count: number; evidence: Evidence[]; evidence_notices: string[]; ended_at: string | null; result: string | null; end_reason: string | null; conclusion: Conclusion | null; conclusions: Conclusion[]; queries: QueryRun[]; query_coverage: { complete: boolean; missing_sources: string[]; notice: string } }[]
   created_at: string
   updated_at: string
   retention_expires_at: string | null
@@ -219,9 +223,22 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
             <div v-for="attempt in selected.attempts" :key="attempt.id">
               <p>服务：{{ attempt.service_id }} · {{ attempt.status }}</p>
               <p>固定日志范围：{{ displayTime(attempt.starts_at) }} — {{ displayTime(attempt.ends_at) }}</p>
-              <p>可控执行适配器：接纳执行身份及受控结构化证据；未接真实日志或 Agent，无分析进度。</p>
-              <p v-if="attempt.ended_at">结束时间：{{ displayTime(attempt.ended_at) }} · 正常排查结束</p>
-              <p>调查结果：{{ attempt.result || '尚未结束' }}；已完成不代表已确认根因。</p>
+              <p>可控执行适配器：支持受控异步查询及结构化证据；未接真实日志或 Agent，不代表真实来源验收完成。</p>
+              <p v-if="attempt.ended_at">结束时间：{{ displayTime(attempt.ended_at) }} · {{ attempt.end_reason === 'necessary_sources_unavailable' ? '必要来源不可用，无法继续' : '正常排查结束' }}</p>
+              <p>调查结果：{{ attempt.result || (attempt.status === '失败' ? '技术失败，未完成排查' : '尚未结束') }}；已完成不代表已确认根因。</p>
+              <h4>来源查询与覆盖</h4>
+              <p role="status">{{ attempt.query_coverage.notice }}</p>
+              <p v-if="!attempt.queries.length">尚未查询所有来源，覆盖不完整。</p>
+              <p v-if="attempt.query_coverage.missing_sources.length">缺失来源：{{ attempt.query_coverage.missing_sources.join('、') }}</p>
+              <article v-for="query in attempt.queries" :key="query.id" class="evidence-card" aria-label="来源查询">
+                <p>{{ query.status === 'running' ? '查询尚未退出' : '查询已退出' }}</p>
+                <div v-for="source in query.sources" :key="source.source">
+                  <p>{{ source.source }} · {{ queryStates[source.state] }} · 实际查询次数：{{ source.attempts }}</p>
+                  <p v-if="source.reason">原因：{{ queryReasons[source.reason] }}</p>
+                  <p v-if="source.retry_after_seconds">来源要求 Retry-After：{{ source.retry_after_seconds }} 秒；不提前绕过限制。</p>
+                  <p v-for="failure in source.failures" :key="failure.attempt">故障 {{ failure.attempt }}：{{ queryReasons[failure.reason] }}<span v-if="failure.wait_seconds !== null">；退出后等待 {{ failure.wait_seconds }} 秒再试</span></p>
+                </div>
+              </article>
               <h4>当前结论</h4>
               <p v-if="attempt.conclusion">版本 {{ attempt.conclusion.version }} · {{ conclusionLabels[attempt.conclusion.kind] }}</p>
               <p v-else>尚无结论。</p>

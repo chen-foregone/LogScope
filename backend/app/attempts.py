@@ -68,9 +68,12 @@ def attempt_views(connection, investigation_id):
             notices.append('升级前证据未声明可靠身份：历史记录原样保留，未倒推身份或合并。')
         from app.conclusions import conclusion_views
         history = conclusion_views(connection, row['id'])
+        from app.queries import query_views, query_coverage, coverage_aliases
+        queried = query_views(connection, row['id'])
         views.append({key: row[key] for key in ('id', 'service_id', 'starts_at', 'ends_at', 'created_at', 'status', 'ended_at', 'result', 'end_reason')}
             | {'execution_mode': 'controlled', 'evidence': saved, 'evidence_count': len(saved), 'evidence_notices': notices,
-               'conclusions': history, 'conclusion': history[-1] if history else None})
+               'conclusions': history, 'conclusion': history[-1] if history else None,
+               'queries': queried, 'query_coverage': query_coverage(queried, coverage_aliases(connection, row['id'], row['source_ids']))})
     return views
 
 
@@ -128,6 +131,11 @@ def attempt_router(engine, services, adapter):
                 request_body=body, service_id=service.id, source_ids=service.source_ids,
                 starts_at=payload.starts_at or now - timedelta(hours=1), ends_at=payload.ends_at or now,
                 created_at=now, status="调查中"))
+            from app.evidence import redaction_keys
+            import secrets
+            if connection.execute(select(redaction_keys.c.secret).where(
+                    redaction_keys.c.investigation_id == investigation_id)).first() is None:
+                connection.execute(insert(redaction_keys).values(investigation_id=investigation_id, secret=secrets.token_bytes(32)))
             try:
                 adapter.accept(connection, attempt_id)
             except Exception:

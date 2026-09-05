@@ -10,6 +10,105 @@ from playwright.sync_api import sync_playwright, expect
 BASE = os.environ.get("UI_BASE_URL", "http://127.0.0.1:5173")
 
 
+def test_query_failure_is_persistent_safe_and_not_completed(evidence_executor):
+    with httpx.Client(base_url=BASE, trust_env=False) as client:
+        record = client.post('/api/investigations', json={'title': 'UI查询故障-' + uuid4().hex[:8]},
+            headers={'Idempotency-Key': str(uuid4())}).json()
+        path = '/api/investigations/' + record['id']
+        attempt = client.post(path + '/attempts', json={'service_id': 'orders'},
+            headers={'Idempotency-Key': str(uuid4())}).json()['attempts'][0]
+        base = f'/api/executor/investigations/{record["id"]}/attempts/{attempt["id"]}/executions'
+        identity = client.get(base, headers=evidence_executor).json()['executions'][0]['id']
+        reply = client.post(base + '/' + identity + '/queries',
+            headers={**evidence_executor, 'Idempotency-Key': str(uuid4())})
+        assert reply.status_code == 201
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            try:
+                page = browser.new_page()
+                page.goto(BASE + '/#/investigations/' + record['id'])
+                detail = page.get_by_role('region', name='调查详情')
+                expect(detail).to_contain_text('覆盖不完整')
+                expect(detail).to_contain_text('未配置受控查询适配器')
+                expect(detail).to_contain_text('实际查询次数：0')
+                expect(detail).to_contain_text('必要来源不可用，无法继续')
+                expect(detail).to_contain_text('查不到不表示没有异常')
+                expect(detail).not_to_contain_text('结束原因：正常结束')
+                page.reload()
+                expect(detail).to_contain_text('未配置受控查询适配器')
+            finally:
+                browser.close()
+
+
+def test_mixed_query_coverage_renders_skipped_source_and_survives_refresh(evidence_executor):
+    with httpx.Client(base_url=BASE, trust_env=False, timeout=15) as client:
+        record = client.post('/api/investigations', json={'title': 'UI混合覆盖-' + uuid4().hex[:8]},
+            headers={'Idempotency-Key': str(uuid4())}).json()
+        path = '/api/investigations/' + record['id']
+        attempt = client.post(path + '/attempts', json={'service_id': 'query-mixed'},
+            headers={'Idempotency-Key': str(uuid4())}).json()['attempts'][0]
+        assert len(attempt['query_coverage']['missing_sources']) == 2
+        base = f'/api/executor/investigations/{record["id"]}/attempts/{attempt["id"]}/executions'
+        identity = client.get(base, headers=evidence_executor).json()['executions'][0]['id']
+        endpoint = base + '/' + identity + '/queries'
+        for _ in range(2):
+            assert client.post(endpoint, headers={**evidence_executor, 'Idempotency-Key': str(uuid4())}).status_code == 201
+        after = client.get(path).json()['attempts'][0]
+        assert len(after['query_coverage']['missing_sources']) == 1
+        missing = after['query_coverage']['missing_sources'][0]
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            try:
+                page = browser.new_page()
+                page.goto(BASE + '/#/investigations/' + record['id'])
+                detail = page.get_by_role('region', name='调查详情')
+                expect(detail).to_contain_text('缺失来源：' + missing)
+                expect(detail).to_contain_text('跳过查询')
+                expect(detail).to_contain_text('来源限流')
+                expect(detail).to_contain_text('查询成功')
+                expect(detail).to_contain_text('实际查询次数：0')
+                expect(detail).to_contain_text('覆盖不完整')
+                page.reload()
+                expect(detail).to_contain_text('跳过查询')
+                assert 'ui-limited' not in page.content()
+                assert 'ui-healthy' not in page.content()
+            finally:
+                browser.close()
+
+
+def test_unqueried_sources_stay_missing_before_and_after_normal_finish(evidence_executor):
+    with httpx.Client(base_url=BASE, trust_env=False) as client:
+        record = client.post('/api/investigations', json={'title': 'UI未扫描-' + uuid4().hex[:8]},
+            headers={'Idempotency-Key': str(uuid4())}).json()
+        path = '/api/investigations/' + record['id']
+        attempt = client.post(path + '/attempts', json={'service_id': 'orders'},
+            headers={'Idempotency-Key': str(uuid4())}).json()['attempts'][0]
+        base = f'/api/executor/investigations/{record["id"]}/attempts/{attempt["id"]}/executions'
+        identity = client.get(base, headers=evidence_executor).json()['executions'][0]['id']
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            try:
+                page = browser.new_page()
+                page.goto(BASE + '/#/investigations/' + record['id'])
+                detail = page.get_by_role('region', name='调查详情')
+                expect(detail).to_contain_text('缺失来源：来源代号-')
+                expect(detail).to_contain_text('覆盖不完整')
+                expect(detail).to_contain_text('尚未查询所有来源')
+                payload = {'format': 'controlled-analysis-v1', 'kind': 'undetermined', 'mechanism': None,
+                    'evidence_ids': [], 'missing': ['causal_trace'], 'expected_version': 0, 'finish': True}
+                assert client.post(base + '/' + identity + '/conclusions', json=payload,
+                    headers={**evidence_executor, 'Idempotency-Key': str(uuid4())}).status_code == 201
+                page.reload()
+                expect(detail).to_contain_text('已完成')
+                expect(detail).to_contain_text('未确定根因')
+                expect(detail).to_contain_text('缺失来源：来源代号-')
+                expect(detail).to_contain_text('覆盖不完整')
+                expect(detail).to_contain_text('查不到不表示没有异常')
+                assert 'controlled-orders' not in page.content()
+            finally:
+                browser.close()
+
+
 def test_create_refresh_list_detail_and_validation():
     title = f"UI调查-{uuid4().hex[:8]}"
     with sync_playwright() as p:
