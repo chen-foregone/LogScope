@@ -20,13 +20,15 @@ attempts = Table(
     Column("starts_at", DateTime(timezone=True)), Column("ends_at", DateTime(timezone=True)),
     Column("created_at", DateTime(timezone=True)), Column("status", String(20)),
     Column("evidence_unavailable", Boolean),
+    Column("cancel_requested_at", DateTime(timezone=True)),
+    Column("stop_confirmed_at", DateTime(timezone=True)), Column("stop_confirmation", String(64)),
     Column("ended_at", DateTime(timezone=True)), Column("result", String(24)), Column("end_reason", String(32)),
 )
 executions = Table(
     "controlled_executions", metadata,
     Column("id", Uuid, primary_key=True),
     Column("attempt_id", Uuid, ForeignKey("attempts.id"), unique=True),
-    Column("valid", Boolean),
+    Column("valid", Boolean), Column("stop_protocol", String(40)),
 )
 
 
@@ -73,7 +75,10 @@ def attempt_views(connection, investigation_id):
         views.append({key: row[key] for key in ('id', 'service_id', 'starts_at', 'ends_at', 'created_at', 'status', 'ended_at', 'result', 'end_reason')}
             | {'execution_mode': 'controlled', 'evidence': saved, 'evidence_count': len(saved), 'evidence_notices': notices,
                'conclusions': history, 'conclusion': history[-1] if history else None,
-               'queries': queried, 'query_coverage': query_coverage(queried, coverage_aliases(connection, row['id'], row['source_ids']))})
+               'queries': queried, 'query_coverage': query_coverage(queried, coverage_aliases(connection, row['id'], row['source_ids'])),
+               'cancel_requested_at': row['cancel_requested_at'], 'stop_confirmed_at': row['stop_confirmed_at'],
+               'stop_confirmation': row['stop_confirmation'],
+               'execution_phase': 'stopped' if row['status'] != '调查中' else ('stopping' if row['cancel_requested_at'] else 'running')})
     return views
 
 
@@ -85,7 +90,8 @@ class ControlledExecutionAdapter:
     """仅持久接纳，不启动线程、不接日志或Agent；接纳与业务共享提交/回滚。"""
 
     def accept(self, connection, attempt_id):
-        connection.execute(insert(executions).values(id=uuid4(), attempt_id=attempt_id, valid=True))
+        connection.execute(insert(executions).values(id=uuid4(), attempt_id=attempt_id, valid=True,
+            stop_protocol='controlled_queries_v1' if type(self) is ControlledExecutionAdapter else None))
 
 
 @contextmanager

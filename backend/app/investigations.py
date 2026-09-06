@@ -38,7 +38,7 @@ class InvestigationView(BaseModel):
     id: UUID
     title: str
     description: str
-    status: Literal["待处理", "调查中", "已完成", "失败"]
+    status: Literal["待处理", "调查中", "已完成", "失败", "已取消"]
     severity: Literal["未评估"]
     service: str | None
     attempts: list[dict]

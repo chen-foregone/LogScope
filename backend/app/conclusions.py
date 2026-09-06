@@ -66,6 +66,8 @@ def conclusion_router(engine, credential, clock):
                     attempts.c.id == attempt_id, executions.c.id == execution_id).with_for_update()).mappings().first()
                 if parent is None or row is None:
                     raise HTTPException(403, '执行身份或轮次无效')
+                if row['cancel_requested_at'] is not None:
+                    raise HTTPException(403, '本轮已请求停止，拒绝旧执行及重放产物')
                 replay = connection.execute(select(conclusions).where(conclusions.c.attempt_id == attempt_id,
                     conclusions.c.request_key == idempotency_key)).mappings().first()
                 # 结束请求本身可重放，但不重新授权执行或接收任何新产物。

@@ -15,7 +15,7 @@ type Conclusion = {
 }
 type QuerySource = { source: string; state: string; attempts: number; reason: string | null; retry_after_seconds?: number | null; failures: { reason: string; attempt: number; wait_seconds: number | null }[] }
 type QueryRun = { id: string; status: string; sources: QuerySource[] }
-const queryStates: Record<string, string> = { pending: '尚未查询', querying: '正在查询', waiting: '受限等待', succeeded: '查询成功', unavailable: '来源缺失', skipped: '跳过查询（来源缺失）' }
+const queryStates: Record<string, string> = { canceled: '已停止，结果不纳入', pending: '尚未查询', querying: '正在查询', waiting: '受限等待', succeeded: '查询成功', unavailable: '来源缺失', skipped: '跳过查询（来源缺失）' }
 const queryReasons: Record<string, string> = { network: '临时网络故障', timeout: '单次查询30秒超时', permission: '权限不足', credentials: '凭据无效', parameters: '查询参数无效', rate_limited: '来源限流', inflight: '来源已有在途查询，等待退出后再试', not_configured: '未配置受控查询适配器', adapter_error: '适配器能力或返回不符合受控契约' }
 const conclusionLabels = { hypothesis: '待验证假设', confirmed: '已确认根因', undetermined: '未确定根因' }
 const missingLabels: Record<string, string> = { causal_trace: '同调用因果传播轨迹', dependency_observation: '依赖调用观测', alternative_exclusion: '替代解释排除依据' }
@@ -27,10 +27,10 @@ type Investigation = {
   title: string
   description: string
   service: string | null
-  status: '待处理' | '调查中' | '已完成' | '失败'
+  status: '待处理' | '调查中' | '已完成' | '失败' | '已取消'
   severity: '未评估'
   evidence_count: number
-  attempts: { id: string; service_id: string; starts_at: string; ends_at: string; status: string; execution_mode: 'controlled'; evidence_count: number; evidence: Evidence[]; evidence_notices: string[]; ended_at: string | null; result: string | null; end_reason: string | null; conclusion: Conclusion | null; conclusions: Conclusion[]; queries: QueryRun[]; query_coverage: { complete: boolean; missing_sources: string[]; notice: string } }[]
+  attempts: { id: string; execution_phase: string; cancel_requested_at: string | null; stop_confirmed_at: string | null; service_id: string; starts_at: string; ends_at: string; status: string; execution_mode: 'controlled'; evidence_count: number; evidence: Evidence[]; evidence_notices: string[]; ended_at: string | null; result: string | null; end_reason: string | null; conclusion: Conclusion | null; conclusions: Conclusion[]; queries: QueryRun[]; query_coverage: { complete: boolean; missing_sources: string[]; notice: string } }[]
   created_at: string
   updated_at: string
   retention_expires_at: string | null
@@ -40,6 +40,27 @@ const serviceId = ref('')
 const rangeMode = ref('recent')
 const startsAt = ref('')
 const endsAt = ref('')
+const canceling = ref<string | null>(null)
+const cancelError = ref('')
+async function cancelInvestigation(attemptId: string) {
+  if (!selected.value || canceling.value === attemptId) return
+  const id = selected.value.id
+  const sequence = readSequence
+  const route = location.hash
+  const isCurrent = () => sequence === readSequence && location.hash === route &&
+    selected.value?.id === id && selected.value.attempts.some(attempt => attempt.id === attemptId) &&
+    canceling.value === attemptId
+  canceling.value = attemptId
+  cancelError.value = ''
+  try {
+    const record = await request<Investigation>(`/${id}/attempts/${attemptId}/cancel`, { method: 'POST' })
+    if (isCurrent()) selected.value = record
+  } catch (cause) {
+    if (isCurrent()) cancelError.value = cause instanceof Error ? cause.message : '取消结果未确认，请刷新状态'
+  } finally {
+    if (isCurrent()) canceling.value = null
+  }
+}
 const starting = ref(false)
 const startError = ref('')
 let pendingStart: { key: string; body: string } | null = null
@@ -75,6 +96,8 @@ async function loadPage() {
   loading.value = true
   error.value = ''
   selected.value = null
+  canceling.value = null
+  cancelError.value = ''
   pendingStart = null
   starting.value = false
   serviceId.value = ''
@@ -206,6 +229,8 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
         <p v-if="loading" role="status">正在读取调查记录…</p>
         <section v-else-if="selected" class="investigation-section detail-panel" aria-label="调查详情">
           <el-button @click="backToList">返回列表</el-button>
+          <el-button @click="loadPage">刷新调查状态</el-button>
+          <el-alert v-if="cancelError" :title="cancelError" type="error" :closable="false" />
           <h2>{{ selected.title }}</h2>
           <p class="incident-id">{{ selected.id }}</p>
           <p class="description-copy">{{ selected.description || '未填写问题描述' }}</p>
@@ -222,10 +247,13 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
           <template v-if="selected.attempts.length">
             <div v-for="attempt in selected.attempts" :key="attempt.id">
               <p>服务：{{ attempt.service_id }} · {{ attempt.status }}</p>
+              <el-button v-if="attempt.status === '调查中'" :disabled="canceling === attempt.id || attempt.execution_phase === 'stopping'" @click="cancelInvestigation(attempt.id)">取消调查</el-button>
+              <p v-if="attempt.execution_phase === 'stopping'" role="status">正在停止：尚未确认执行终止，仍为调查中、继续占用运行名额，不能启动新轮。请刷新调查状态查看确认结果。</p>
+              <p v-if="attempt.stop_confirmed_at">用户主动停止，已确认执行终止；停止前保存的材料仍保留。</p>
               <p>固定日志范围：{{ displayTime(attempt.starts_at) }} — {{ displayTime(attempt.ends_at) }}</p>
               <p>可控执行适配器：支持受控异步查询及结构化证据；未接真实日志或 Agent，不代表真实来源验收完成。</p>
-              <p v-if="attempt.ended_at">结束时间：{{ displayTime(attempt.ended_at) }} · {{ attempt.end_reason === 'necessary_sources_unavailable' ? '必要来源不可用，无法继续' : '正常排查结束' }}</p>
-              <p>调查结果：{{ attempt.result || (attempt.status === '失败' ? '技术失败，未完成排查' : '尚未结束') }}；已完成不代表已确认根因。</p>
+              <p v-if="attempt.ended_at">结束时间：{{ displayTime(attempt.ended_at) }} · {{ attempt.end_reason === 'user_canceled' ? '用户主动停止，已确认执行终止' : attempt.end_reason === 'necessary_sources_unavailable' ? '必要来源不可用，无法继续' : '正常排查结束' }}</p>
+              <p>调查结果：{{ attempt.result || (attempt.status === '已取消' ? '主动停止，未完成排查' : attempt.status === '失败' ? '技术失败，未完成排查' : '尚未结束') }}；已完成不代表已确认根因。</p>
               <h4>来源查询与覆盖</h4>
               <p role="status">{{ attempt.query_coverage.notice }}</p>
               <p v-if="!attempt.queries.length">尚未查询所有来源，覆盖不完整。</p>

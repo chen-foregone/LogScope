@@ -61,6 +61,19 @@ class SourceFailure(Exception):
         super().__init__('来源查询不可用')
 
 
+async def wait_for_exit(task):
+    if not task.done() and not task.cancelling():
+        task.cancel()
+    while not task.done():
+        try:
+            await asyncio.shield(task)
+        except (asyncio.CancelledError, Exception):
+            pass
+    # 取回异常，避免已退出任务的异常无人读取；调用方决定如何处理结果。
+    if not task.cancelled():
+        task.exception()
+
+
 class QuerySchedule:
     async def wait(self, seconds):
         await asyncio.sleep(seconds)
@@ -71,20 +84,26 @@ class QuerySchedule:
             done, _ = await asyncio.wait({task}, timeout=seconds)
             if done:
                 return task.result()
-            task.cancel()
-            try:
-                await task
-            except (asyncio.CancelledError, Exception):
-                pass
+            await wait_for_exit(task)
+            if not task.cancelled():
+                error = task.exception()
+                if isinstance(error, SourceFailure) and error.reason == 'rate_limited':
+                    raise error
             # 即使来源吞掉取消并返回，也不能把越界结果算成功。
             raise TimeoutError()
+        except asyncio.CancelledError:
+            await wait_for_exit(task)
+            if not task.cancelled():
+                error = task.exception()
+                if isinstance(error, SourceFailure) and error.reason == 'rate_limited':
+                    raise error
+            raise
         finally:
-            if not task.done():
-                task.cancel()
-                try:
-                    await task
-                except (asyncio.CancelledError, Exception):
-                    pass
+            await wait_for_exit(task)
+
+
+class QueryCanceled(Exception):
+    pass
 
 
 def query_router(engine, credential, sources, clock, schedule):
@@ -152,6 +171,41 @@ def query_router(engine, credential, sources, clock, schedule):
                 connection.execute(insert(queries).values(id=identity, attempt_id=attempt_id, execution_id=execution_id,
                     request_key=idempotency_key, active=True, created_at=clock(), material=result))
                 connection.execute(update(investigations).where(investigations.c.id == investigation_id).values(updated_at=clock()))
+            async def controlled(operation):
+                with engine.connect() as connection:
+                    canceled = connection.execute(select(attempts.c.cancel_requested_at).where(
+                        attempts.c.id == attempt_id)).scalar_one() is not None
+                if canceled:
+                    raise QueryCanceled()
+                task = asyncio.create_task(operation())
+                try:
+                    while True:
+                        done, _ = await asyncio.wait({task}, timeout=0.1)
+                        with engine.connect() as connection:
+                            canceled = connection.execute(select(attempts.c.cancel_requested_at).where(
+                                attempts.c.id == attempt_id)).scalar_one() is not None
+                        if canceled:
+                            await wait_for_exit(task)
+                            if not task.cancelled():
+                                failure = task.exception()
+                                if isinstance(failure, SourceFailure) and failure.reason == 'rate_limited':
+                                    state.update(state='unavailable', reason='rate_limited', retry_not_before=None)
+                                    requested = failure.retry_after
+                                    if type(requested) in (int, float) and math.isfinite(requested) and requested > 0:
+                                        state['retry_after_seconds'] = requested
+                                        try:
+                                            state['retry_not_before'] = (clock() + timedelta(seconds=requested)).isoformat()
+                                        except OverflowError:
+                                            pass
+                                    state['failures'].append({'reason': 'rate_limited', 'attempt': state['attempts'],
+                                        'timeout_seconds': 30, 'wait_seconds': None,
+                                        'retry_after_seconds': state.get('retry_after_seconds')})
+                            raise QueryCanceled()
+                        if done:
+                            return task.result()
+                finally:
+                    await wait_for_exit(task)
+
             def progress():
                 with engine.begin() as connection:
                     connection.execute(select(investigations.c.id).where(investigations.c.id == investigation_id).with_for_update()).first()
@@ -176,10 +230,12 @@ def query_router(engine, credential, sources, clock, schedule):
                         if not inspect.iscoroutinefunction(adapter.query):
                             state['attempts'] = 0
                             raise SourceFailure('adapter_error')
-                        output = await schedule.deadline(adapter.query(source_id=source_id,
-                            starts_at=row['starts_at'], ends_at=row['ends_at']), 30)
+                        output = await controlled(lambda: schedule.deadline(adapter.query(source_id=source_id,
+                            starts_at=row['starts_at'], ends_at=row['ends_at']), 30))
                         if output is not None:
                             raise SourceFailure('adapter_error')
+                    except QueryCanceled:
+                        raise
                     except TimeoutError:
                         failure = SourceFailure('timeout')
                     except SourceFailure as error:
@@ -215,7 +271,7 @@ def query_router(engine, credential, sources, clock, schedule):
                     state['state'] = 'waiting'
                     progress()
                     # 每次等待从失败退出后开始，2/5秒不是调用开始偏移。
-                    await schedule.wait(delay)
+                    await controlled(lambda: schedule.wait(delay))
             result['status'] = 'finished'
             with engine.begin() as connection:
                 connection.execute(select(investigations.c.id).where(investigations.c.id == investigation_id).with_for_update()).first()
@@ -223,7 +279,8 @@ def query_router(engine, credential, sources, clock, schedule):
                     executions.c.id == execution_id, executions.c.valid.is_(True), attempts.c.status == '调查中')).first()
                 if valid is None:
                     raise HTTPException(403, '执行身份或轮次无效')
-                for source_id, state in zip(row['source_ids'], result['sources']):
+                for source_id, state in sorted(zip(row['source_ids'], result['sources']),
+                                               key=lambda pair: source_keys[pair[0]]):
                     retry_at = state.get('retry_not_before')
                     connection.execute(update(source_gates).where(source_gates.c.source_key == source_keys[source_id],
                         source_gates.c.query_id == identity).values(query_id=None,
@@ -239,7 +296,36 @@ def query_router(engine, credential, sources, clock, schedule):
                     values['retention_expires_at'] = now + timedelta(days=30)
                 connection.execute(update(investigations).where(investigations.c.id == investigation_id).values(**values))
             return result
-        except HTTPException:
+        except (QueryCanceled, HTTPException) as error:
+            if 'result' in locals():
+                try:
+                    with engine.begin() as connection:
+                        connection.execute(select(investigations.c.id).where(
+                            investigations.c.id == investigation_id).with_for_update()).first()
+                        canceled = connection.execute(select(attempts.c.cancel_requested_at).where(
+                            attempts.c.id == attempt_id)).scalar_one_or_none()
+                        owned = connection.execute(select(queries.c.id).where(queries.c.id == identity,
+                            queries.c.active.is_(True))).first()
+                        if canceled is not None and owned:
+                            result['status'] = 'canceled'
+                            for source_id, state in sorted(zip(row['source_ids'], result['sources']),
+                                                           key=lambda pair: source_keys[pair[0]]):
+                                retry_at = state.get('retry_not_before')
+                                connection.execute(update(source_gates).where(
+                                    source_gates.c.source_key == source_keys[source_id],
+                                    source_gates.c.query_id == identity).values(query_id=None,
+                                        blocked=state['reason'] == 'rate_limited',
+                                        retry_at=datetime.fromisoformat(retry_at) if retry_at else None))
+                            for state in result['sources']:
+                                if state['state'] not in {'skipped', 'unavailable'}:
+                                    state.update(state='canceled', reason=None)
+                            connection.execute(update(queries).where(queries.c.id == identity).values(active=False, material=result))
+                            from app.cancellation import confirm_stop
+                            confirm_stop(connection, investigation_id, attempt_id, clock())
+                except Exception:
+                    raise HTTPException(503, '停止确认未保存，保持正在停止，请读取本轮状态') from None
+            if isinstance(error, QueryCanceled):
+                raise HTTPException(403, '本轮已请求停止，查询结果不纳入') from None
             raise
         except Exception:
             raise HTTPException(503, '查询结果未确认；未保存原始诊断，请读取本轮状态') from None

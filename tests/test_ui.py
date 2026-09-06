@@ -10,6 +10,91 @@ from playwright.sync_api import sync_playwright, expect
 BASE = os.environ.get("UI_BASE_URL", "http://127.0.0.1:5173")
 
 
+def test_cancel_navigation_isolates_pending_errors_and_old_finally():
+    with httpx.Client(base_url=BASE, trust_env=False) as client:
+        records = []
+        for label in ('A', 'B'):
+            record = client.post('/api/investigations', json={'title': '取消归属-' + label + uuid4().hex[:8]},
+                                 headers={'Idempotency-Key': str(uuid4())}).json()
+            record = client.post('/api/investigations/' + record['id'] + '/attempts',
+                                 json={'service_id': 'orders'}, headers={'Idempotency-Key': str(uuid4())}).json()
+            records.append(record)
+    with sync_playwright() as p:
+        browser = p.chromium.launch(headless=True)
+        held = []
+        try:
+            page = browser.new_page()
+            page.route('**/cancel', lambda route: held.append(route))
+            detail = page.get_by_role('region', name='调查详情')
+            button = detail.get_by_role('button', name='取消调查', exact=True)
+            page.goto(BASE + '/#/investigations/' + records[0]['id'])
+            button.click()
+            expect(button).to_be_disabled()
+            page.wait_for_function('true')
+            assert len(held) == 1
+            page.evaluate('(id) => location.hash = "/investigations/" + id', records[1]['id'])
+            expect(detail.get_by_role('heading', name=records[1]['title'], exact=True)).to_be_visible()
+            expect(button).to_be_enabled()
+            button.click()
+            expect(button).to_be_disabled()
+            page.wait_for_function('true')
+            assert len(held) == 2
+            held[0].fulfill(status=503, json={'detail': 'A旧取消错误'})
+            expect(button).to_be_disabled()
+            expect(detail).not_to_contain_text('A旧取消错误')
+            held[1].fulfill(status=503, json={'detail': 'B当前取消错误'})
+            expect(detail).to_contain_text('B当前取消错误')
+            expect(button).to_be_enabled()
+            page.evaluate('(id) => location.hash = "/investigations/" + id', records[0]['id'])
+            expect(detail.get_by_role('heading', name=records[0]['title'], exact=True)).to_be_visible()
+            expect(detail).not_to_contain_text('B当前取消错误')
+            expect(button).to_be_enabled()
+        finally:
+            browser.close()
+
+
+def test_cancel_ui_distinguishes_stopping_from_confirmed_and_refreshes(evidence_executor):
+    from concurrent.futures import ThreadPoolExecutor
+    with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client:
+        record = client.post('/api/investigations', json={'title': 'UI取消-' + uuid4().hex[:8]},
+            headers={'Idempotency-Key': str(uuid4())}).json()
+        path = '/api/investigations/' + record['id']
+        attempt = client.post(path + '/attempts', json={'service_id': 'cancel-ui'},
+            headers={'Idempotency-Key': str(uuid4())}).json()['attempts'][0]
+        base = f'/api/executor/investigations/{record["id"]}/attempts/{attempt["id"]}/executions'
+        identity = client.get(base, headers=evidence_executor).json()['executions'][0]['id']
+        with sync_playwright() as p, ThreadPoolExecutor(max_workers=1) as pool:
+            browser = p.chromium.launch(headless=True)
+            try:
+                page = browser.new_page()
+                page.goto(BASE + '/#/investigations/' + record['id'])
+                detail = page.get_by_role('region', name='调查详情')
+                expect(detail.get_by_role('button', name='取消调查', exact=True)).to_be_visible()
+                pending = pool.submit(client.post, base + '/' + identity + '/queries',
+                    headers={**evidence_executor, 'Idempotency-Key': str(uuid4())})
+                # 通过公开API等待查询实际在途，不注入业务状态。
+                import time
+                deadline = time.monotonic() + 5
+                while not client.get(path).json()['attempts'][0]['queries']:
+                    assert time.monotonic() < deadline
+                detail.get_by_role('button', name='取消调查', exact=True).click()
+                expect(detail).to_contain_text('正在停止')
+                expect(detail).to_contain_text('尚未确认执行终止')
+                expect(detail.get_by_role('button', name='取消调查', exact=True)).to_be_disabled()
+                page.reload()
+                expect(detail).to_contain_text('正在停止')
+                expect(detail.get_by_role('button', name='启动调查')).to_have_count(0)
+                assert pending.result(15).status_code == 403
+                detail.get_by_role('button', name='刷新调查状态').click()
+                expect(detail).to_contain_text('已取消')
+                expect(detail).to_contain_text('用户主动停止，已确认执行终止')
+                expect(detail).not_to_contain_text('正常排查结束')
+                page.reload()
+                expect(detail).to_contain_text('已取消')
+            finally:
+                browser.close()
+
+
 def test_query_failure_is_persistent_safe_and_not_completed(evidence_executor):
     with httpx.Client(base_url=BASE, trust_env=False) as client:
         record = client.post('/api/investigations', json={'title': 'UI查询故障-' + uuid4().hex[:8]},

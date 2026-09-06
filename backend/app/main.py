@@ -47,7 +47,10 @@ def create_app(database_url: str | None = None, *, services_file=None, executor_
         clock or (lambda: datetime.now(timezone.utc))), prefix=settings.api_prefix)
     application.include_router(evidence_router(engine, executor_credential if executor_credential is not None else settings.executor_credential), prefix=settings.api_prefix)
     application.include_router(execution_router(engine, executor_credential if executor_credential is not None else settings.executor_credential), prefix=settings.api_prefix)
-    application.include_router(attempt_router(engine, services, execution_adapter or ControlledExecutionAdapter()), prefix=settings.api_prefix)
+    adapter = execution_adapter or ControlledExecutionAdapter()
+    from app.cancellation import cancellation_router
+    application.include_router(cancellation_router(engine, clock or (lambda: datetime.now(timezone.utc))), prefix=settings.api_prefix)
+    application.include_router(attempt_router(engine, services, adapter), prefix=settings.api_prefix)
     application.include_router(service_router(services), prefix=settings.api_prefix)
     application.include_router(health_router, prefix=settings.api_prefix)
     application.include_router(investigation_router(engine), prefix=settings.api_prefix)

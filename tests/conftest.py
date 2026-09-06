@@ -41,7 +41,8 @@ def evidence_executor(tmp_path_factory):
     config = fixture_dir / 'services.json'
     config.write_text(json.dumps({'services': [
         {'id': 'orders', 'name': '订单服务（仅可控适配）', 'source_ids': ['controlled-orders']},
-        {'id': 'query-mixed', 'name': '混合覆盖测试', 'source_ids': ['ui-limited', 'ui-healthy']}]}), encoding='utf-8')
+        {'id': 'query-mixed', 'name': '混合覆盖测试', 'source_ids': ['ui-limited', 'ui-healthy']},
+        {'id': 'cancel-ui', 'name': '取消测试', 'source_ids': ['ui-cancel']}]}), encoding='utf-8')
     env['SERVICES_FILE'] = str(config)
     processes = []
     try:
@@ -55,7 +56,14 @@ class Limited:
 class Healthy:
     async def query(self, **scope):
         return None
-uvicorn.run(create_app(query_sources={'ui-limited': Limited(), 'ui-healthy': Healthy()}), host='127.0.0.1', port=8000, access_log=False)
+class CancelSource:
+    async def query(self, **scope):
+        import asyncio
+        try:
+            await asyncio.Future()
+        except asyncio.CancelledError:
+            await asyncio.sleep(3)
+uvicorn.run(create_app(query_sources={'ui-limited': Limited(), 'ui-healthy': Healthy(), 'ui-cancel': CancelSource()}), host='127.0.0.1', port=8000, access_log=False)
 '''
         processes.append(subprocess.Popen([sys.executable, '-c', startup],
                                          cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
