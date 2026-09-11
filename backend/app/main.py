@@ -11,15 +11,25 @@ from app.core.config import settings
 from app.investigations import investigation_router
 
 
-def create_app(database_url: str | None = None, *, services_file=None, executor_credential=None, execution_adapter=None, clock=None, query_sources=None, query_schedule=None) -> FastAPI:
+def create_app(database_url: str | None = None, *, services_file=None, executor_credential=None, execution_adapter=None, clock=None, query_sources=None, query_schedule=None, deadline_schedule=None) -> FastAPI:
     from app.services import load_services, service_router
     services = load_services(services_file if services_file is not None else settings.services_file)
     engine = create_engine(database_url or settings.database_url, pool_pre_ping=True, hide_parameters=True)
 
+    from datetime import datetime, timezone
+    from app.deadlines import DeadlineSchedule, deadline_coordinator
+    import asyncio
+    business_clock = clock or (lambda: datetime.now(timezone.utc))
+
     @asynccontextmanager
     async def lifespan(app):
-        yield
-        engine.dispose()
+        coordinator = asyncio.create_task(deadline_coordinator(engine, business_clock, deadline_schedule or DeadlineSchedule()))
+        try:
+            yield
+        finally:
+            coordinator.cancel()
+            await asyncio.gather(coordinator, return_exceptions=True)
+            engine.dispose()
 
     application = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
     @application.exception_handler(RequestValidationError)
@@ -45,12 +55,13 @@ def create_app(database_url: str | None = None, *, services_file=None, executor_
         query_sources or {}, clock or (lambda: datetime.now(timezone.utc)), query_schedule or QuerySchedule()), prefix=settings.api_prefix)
     application.include_router(conclusion_router(engine, executor_credential if executor_credential is not None else settings.executor_credential,
         clock or (lambda: datetime.now(timezone.utc))), prefix=settings.api_prefix)
-    application.include_router(evidence_router(engine, executor_credential if executor_credential is not None else settings.executor_credential), prefix=settings.api_prefix)
-    application.include_router(execution_router(engine, executor_credential if executor_credential is not None else settings.executor_credential), prefix=settings.api_prefix)
+    application.include_router(evidence_router(engine, executor_credential if executor_credential is not None else settings.executor_credential,
+        clock or (lambda: datetime.now(timezone.utc))), prefix=settings.api_prefix)
+    application.include_router(execution_router(engine, executor_credential if executor_credential is not None else settings.executor_credential, business_clock), prefix=settings.api_prefix)
     adapter = execution_adapter or ControlledExecutionAdapter()
     from app.cancellation import cancellation_router
     application.include_router(cancellation_router(engine, clock or (lambda: datetime.now(timezone.utc))), prefix=settings.api_prefix)
-    application.include_router(attempt_router(engine, services, adapter), prefix=settings.api_prefix)
+    application.include_router(attempt_router(engine, services, adapter, clock or (lambda: datetime.now(timezone.utc))), prefix=settings.api_prefix)
     application.include_router(service_router(services), prefix=settings.api_prefix)
     application.include_router(health_router, prefix=settings.api_prefix)
     application.include_router(investigation_router(engine), prefix=settings.api_prefix)

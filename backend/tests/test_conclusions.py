@@ -511,7 +511,8 @@ def test_upgrade_0005_keeps_existing_evidence_and_accepts_conclusion(database_ur
         cwd=ROOT, env={**os.environ, 'DATABASE_URL': database_url, 'PYTHONPATH': str(ROOT / 'backend')}, capture_output=True)
     assert migrated.returncode == 0
     credential = uuid4().hex
-    with configured_client(database_url, tmp_path, executor_credential=credential) as client:
+    # 在旧轮期限内验证原有结论/证据契约，不绕过08期限判断。
+    with configured_client(database_url, tmp_path, executor_credential=credential, clock=lambda: now) as client:
         path = '/api/investigations/' + str(investigation)
         detail = client.get(path).json()
         assert detail['updated_at'] == '2026-11-01T00:00:00Z'

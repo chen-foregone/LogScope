@@ -30,7 +30,7 @@ type Investigation = {
   status: '待处理' | '调查中' | '已完成' | '失败' | '已取消'
   severity: '未评估'
   evidence_count: number
-  attempts: { id: string; execution_phase: string; cancel_requested_at: string | null; stop_confirmed_at: string | null; service_id: string; starts_at: string; ends_at: string; status: string; execution_mode: 'controlled'; evidence_count: number; evidence: Evidence[]; evidence_notices: string[]; ended_at: string | null; result: string | null; end_reason: string | null; conclusion: Conclusion | null; conclusions: Conclusion[]; queries: QueryRun[]; query_coverage: { complete: boolean; missing_sources: string[]; notice: string } }[]
+  attempts: { id: string; execution_phase: string; cancel_requested_at: string | null; deadline_at: string; timeout_requested_at: string | null; stop_confirmed_at: string | null; service_id: string; starts_at: string; ends_at: string; status: string; execution_mode: 'controlled'; evidence_count: number; evidence: Evidence[]; evidence_notices: string[]; ended_at: string | null; result: string | null; end_reason: string | null; conclusion: Conclusion | null; conclusions: Conclusion[]; queries: QueryRun[]; query_coverage: { complete: boolean; missing_sources: string[]; notice: string } }[]
   created_at: string
   updated_at: string
   retention_expires_at: string | null
@@ -247,12 +247,15 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
           <template v-if="selected.attempts.length">
             <div v-for="attempt in selected.attempts" :key="attempt.id">
               <p>服务：{{ attempt.service_id }} · {{ attempt.status }}</p>
-              <el-button v-if="attempt.status === '调查中'" :disabled="canceling === attempt.id || attempt.execution_phase === 'stopping'" @click="cancelInvestigation(attempt.id)">取消调查</el-button>
+              <el-button v-if="attempt.status === '调查中'" :disabled="canceling === attempt.id || attempt.execution_phase === 'stopping' || attempt.execution_phase === 'timeout_stopping'" @click="cancelInvestigation(attempt.id)">取消调查</el-button>
               <p v-if="attempt.execution_phase === 'stopping'" role="status">正在停止：尚未确认执行终止，仍为调查中、继续占用运行名额，不能启动新轮。请刷新调查状态查看确认结果。</p>
-              <p v-if="attempt.stop_confirmed_at">用户主动停止，已确认执行终止；停止前保存的材料仍保留。</p>
+              <p>单轮截止时间：{{ displayTime(attempt.deadline_at) }}；启动起10分钟，查询、重试和等待共享预算。</p>
+              <p v-if="attempt.execution_phase === 'timeout_stopping'" role="status">总时限已到，等待执行退出确认：仍为调查中、继续占用运行名额，不能启动新轮。请刷新调查状态查看确认结果。</p>
+              <p v-if="attempt.stop_confirmed_at && attempt.cancel_requested_at">用户主动停止，已确认执行终止；停止前保存的材料仍保留。</p>
+              <p v-if="attempt.stop_confirmed_at && attempt.timeout_requested_at">总时限退出已确认，已保存材料仍保留。</p>
               <p>固定日志范围：{{ displayTime(attempt.starts_at) }} — {{ displayTime(attempt.ends_at) }}</p>
               <p>可控执行适配器：支持受控异步查询及结构化证据；未接真实日志或 Agent，不代表真实来源验收完成。</p>
-              <p v-if="attempt.ended_at">结束时间：{{ displayTime(attempt.ended_at) }} · {{ attempt.end_reason === 'user_canceled' ? '用户主动停止，已确认执行终止' : attempt.end_reason === 'necessary_sources_unavailable' ? '必要来源不可用，无法继续' : '正常排查结束' }}</p>
+              <p v-if="attempt.ended_at">结束时间：{{ displayTime(attempt.ended_at) }} · {{ attempt.end_reason === 'user_canceled' ? '用户主动停止，已确认执行终止' : attempt.end_reason === 'necessary_sources_unavailable' ? '必要来源不可用，无法继续' : attempt.end_reason === 'attempt_deadline_exceeded' ? '单轮10分钟总时限已到' : '正常排查结束' }}</p>
               <p>调查结果：{{ attempt.result || (attempt.status === '已取消' ? '主动停止，未完成排查' : attempt.status === '失败' ? '技术失败，未完成排查' : '尚未结束') }}；已完成不代表已确认根因。</p>
               <h4>来源查询与覆盖</h4>
               <p role="status">{{ attempt.query_coverage.notice }}</p>

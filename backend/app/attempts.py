@@ -20,6 +20,8 @@ attempts = Table(
     Column("starts_at", DateTime(timezone=True)), Column("ends_at", DateTime(timezone=True)),
     Column("created_at", DateTime(timezone=True)), Column("status", String(20)),
     Column("evidence_unavailable", Boolean),
+    Column("deadline_at", DateTime(timezone=True)),
+    Column("timeout_requested_at", DateTime(timezone=True)),
     Column("cancel_requested_at", DateTime(timezone=True)),
     Column("stop_confirmed_at", DateTime(timezone=True)), Column("stop_confirmation", String(64)),
     Column("ended_at", DateTime(timezone=True)), Column("result", String(24)), Column("end_reason", String(32)),
@@ -72,13 +74,13 @@ def attempt_views(connection, investigation_id):
         history = conclusion_views(connection, row['id'])
         from app.queries import query_views, query_coverage, coverage_aliases
         queried = query_views(connection, row['id'])
-        views.append({key: row[key] for key in ('id', 'service_id', 'starts_at', 'ends_at', 'created_at', 'status', 'ended_at', 'result', 'end_reason')}
+        views.append({key: row[key] for key in ('id', 'service_id', 'starts_at', 'ends_at', 'created_at', 'deadline_at', 'status', 'ended_at', 'result', 'end_reason')}
             | {'execution_mode': 'controlled', 'evidence': saved, 'evidence_count': len(saved), 'evidence_notices': notices,
                'conclusions': history, 'conclusion': history[-1] if history else None,
                'queries': queried, 'query_coverage': query_coverage(queried, coverage_aliases(connection, row['id'], row['source_ids'])),
                'cancel_requested_at': row['cancel_requested_at'], 'stop_confirmed_at': row['stop_confirmed_at'],
-               'stop_confirmation': row['stop_confirmation'],
-               'execution_phase': 'stopped' if row['status'] != '调查中' else ('stopping' if row['cancel_requested_at'] else 'running')})
+               'stop_confirmation': row['stop_confirmation'], 'timeout_requested_at': row['timeout_requested_at'],
+               'execution_phase': 'stopped' if row['status'] != '调查中' else ('stopping' if row['cancel_requested_at'] else 'timeout_stopping' if row['timeout_requested_at'] else 'running')})
     return views
 
 
@@ -103,7 +105,7 @@ def start_transaction(engine):
         raise HTTPException(503, "数据库启动结果未确认；请使用同一请求标识重试以读取真实结果") from None
 
 
-def attempt_router(engine, services, adapter):
+def attempt_router(engine, services, adapter, clock):
     router = APIRouter(prefix="/investigations")
 
     @router.post("/{investigation_id}/attempts", status_code=201, response_model=InvestigationView)
@@ -130,13 +132,13 @@ def attempt_router(engine, services, adapter):
             service = services.get(payload.service_id)
             if service is None:
                 raise HTTPException(422, "服务未配置或无效，尚未启动")
-            now = datetime.now(timezone.utc)
+            now = clock()
             attempt_id = uuid4()
             connection.execute(insert(attempts).values(
                 id=attempt_id, investigation_id=investigation_id, request_key=idempotency_key,
                 request_body=body, service_id=service.id, source_ids=service.source_ids,
                 starts_at=payload.starts_at or now - timedelta(hours=1), ends_at=payload.ends_at or now,
-                created_at=now, status="调查中"))
+                created_at=now, deadline_at=now + timedelta(minutes=10), status="调查中"))
             from app.evidence import redaction_keys
             import secrets
             if connection.execute(select(redaction_keys.c.secret).where(

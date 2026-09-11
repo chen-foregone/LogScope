@@ -42,7 +42,8 @@ def evidence_executor(tmp_path_factory):
     config.write_text(json.dumps({'services': [
         {'id': 'orders', 'name': '订单服务（仅可控适配）', 'source_ids': ['controlled-orders']},
         {'id': 'query-mixed', 'name': '混合覆盖测试', 'source_ids': ['ui-limited', 'ui-healthy']},
-        {'id': 'cancel-ui', 'name': '取消测试', 'source_ids': ['ui-cancel']}]}), encoding='utf-8')
+        {'id': 'cancel-ui', 'name': '取消测试', 'source_ids': ['ui-cancel']},
+        {'id': 'deadline-ui', 'name': '总时限测试', 'source_ids': ['ui-deadline']}]}), encoding='utf-8')
     env['SERVICES_FILE'] = str(config)
     processes = []
     try:
@@ -63,7 +64,16 @@ class CancelSource:
             await asyncio.Future()
         except asyncio.CancelledError:
             await asyncio.sleep(3)
-uvicorn.run(create_app(query_sources={'ui-limited': Limited(), 'ui-healthy': Healthy(), 'ui-cancel': CancelSource()}), host='127.0.0.1', port=8000, access_log=False)
+from datetime import datetime, timedelta, timezone
+shift = timedelta()
+def clock():
+    return datetime.now(timezone.utc) + shift
+class DeadlineSource(CancelSource):
+    async def query(self, **scope):
+        global shift
+        shift += timedelta(minutes=10)
+        await super().query(**scope)
+uvicorn.run(create_app(clock=clock, query_sources={'ui-limited': Limited(), 'ui-healthy': Healthy(), 'ui-cancel': CancelSource(), 'ui-deadline': DeadlineSource()}), host='127.0.0.1', port=8000, access_log=False)
 '''
         processes.append(subprocess.Popen([sys.executable, '-c', startup],
                                          cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))

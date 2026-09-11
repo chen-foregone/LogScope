@@ -66,6 +66,9 @@ def conclusion_router(engine, credential, clock):
                     attempts.c.id == attempt_id, executions.c.id == execution_id).with_for_update()).mappings().first()
                 if parent is None or row is None:
                     raise HTTPException(403, '执行身份或轮次无效')
+                from app.deadlines import enforce_deadline, finalize_deadline
+                enforce_deadline(connection, row, clock())
+                pending = connection.begin_nested()
                 if row['cancel_requested_at'] is not None:
                     raise HTTPException(403, '本轮已请求停止，拒绝旧执行及重放产物')
                 replay = connection.execute(select(conclusions).where(conclusions.c.attempt_id == attempt_id,
@@ -74,6 +77,7 @@ def conclusion_router(engine, credential, clock):
                 if replay:
                     if replay['request_body'] != canonical or replay['execution_id'] != execution_id:
                         raise HTTPException(409, '结论请求标识已用于不同内容')
+                    finalize_deadline(connection, row, clock, pending)
                     response.status_code = 200
                     return replay['material']
                 if row['status'] != '调查中' or not row['valid']:
@@ -147,6 +151,7 @@ def conclusion_router(engine, credential, clock):
                     connection.execute(update(executions).where(executions.c.id == execution_id).values(valid=False))
                     values['retention_expires_at'] = now + timedelta(days=30)
                 connection.execute(update(investigations).where(investigations.c.id == investigation_id).values(**values))
+                finalize_deadline(connection, row, clock, pending)
             return result
         except HTTPException:
             raise

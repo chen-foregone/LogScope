@@ -111,7 +111,7 @@ def evidence_views(connection, attempt_id):
     return [dict(row['material'], id=str(row['id']), identity_status=row['identity_status']) for row in rows]
 
 
-def evidence_router(engine, credential):
+def evidence_router(engine, credential, clock):
     router = APIRouter(prefix='/executor', include_in_schema=False)
 
     @router.post('/investigations/{investigation_id}/attempts/{attempt_id}/executions/{execution_id}/evidence', status_code=201)
@@ -142,9 +142,13 @@ def evidence_router(engine, credential):
                     executions.c.valid.is_(True)).with_for_update()).mappings().first()
                 if parent is None or row is None:
                     raise HTTPException(403, '执行身份或轮次无效')
+                from app.deadlines import enforce_deadline, finalize_deadline
+                enforce_deadline(connection, row, clock())
+                pending = connection.begin_nested()
                 if payload is None:
                     connection.execute(update(attempts).where(attempts.c.id == attempt_id).values(evidence_unavailable=True))
                     # 提交的只有固定布尔提示；拒绝原文不进入SQL或异常记录。
+                    finalize_deadline(connection, row, clock, pending)
                     connection.commit()
                     raise HTTPException(422, '证据不可用：仅支持受控结构化事件v1，未知字段、自由文本或非法材料已拒绝；未保存原文')
                 if payload.source_id not in row['source_ids']:
@@ -185,16 +189,18 @@ def evidence_router(engine, credential):
                     if existing:
                         if existing['content_key'] != content_key:
                             raise HTTPException(409, '证据身份冲突：同一可靠身份的原始事件内容发生变化；旧证据保留，本次未纳入')
+                        finalize_deadline(connection, row, clock, pending)
                         response.status_code = 200
                         return dict(existing['material'], id=str(existing['id']), identity_status=existing['identity_status'])
                 status = 'reliable' if identity_key else 'unavailable'
                 identity = uuid4()
-                now = datetime.now(timezone.utc)
+                now = clock()
                 connection.execute(insert(evidence).values(id=identity, attempt_id=attempt_id, created_at=now, material=result,
                     identity_key=identity_key, content_key=content_key, identity_status=status))
                 result['identity_status'] = status
                 connection.execute(update(investigations).where(investigations.c.id == investigation_id).values(updated_at=now))
                 result['id'] = str(identity)
+                finalize_deadline(connection, row, clock, pending)
             return result
         except HTTPException:
             raise

@@ -10,6 +10,46 @@ from playwright.sync_api import sync_playwright, expect
 BASE = os.environ.get("UI_BASE_URL", "http://127.0.0.1:5173")
 
 
+def test_deadline_ui_distinguishes_timeout_wait_from_failure_and_navigation(evidence_executor):
+    from concurrent.futures import ThreadPoolExecutor
+    import time
+    with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client:
+        record = client.post('/api/investigations', json={'title': 'UI期限-' + uuid4().hex[:8]},
+                             headers={'Idempotency-Key': str(uuid4())}).json()
+        path = '/api/investigations/' + record['id']
+        attempt = client.post(path + '/attempts', json={'service_id': 'deadline-ui'},
+                              headers={'Idempotency-Key': str(uuid4())}).json()['attempts'][0]
+        base = f'/api/executor/investigations/{record["id"]}/attempts/{attempt["id"]}/executions'
+        identity = client.get(base, headers=evidence_executor).json()['executions'][0]['id']
+        with sync_playwright() as p, ThreadPoolExecutor(max_workers=1) as pool:
+            browser = p.chromium.launch(headless=True)
+            try:
+                page = browser.new_page()
+                page.goto(BASE + '/#/investigations/' + record['id'])
+                detail = page.get_by_role('region', name='调查详情')
+                expect(detail).to_contain_text('单轮截止时间')
+                pending = pool.submit(client.post, base + '/' + identity + '/queries',
+                                      headers={**evidence_executor, 'Idempotency-Key': str(uuid4())})
+                limit = time.monotonic() + 5
+                while client.get(path).json()['attempts'][0]['execution_phase'] != 'timeout_stopping':
+                    assert time.monotonic() < limit
+                page.reload()
+                expect(detail).to_contain_text('总时限已到，等待执行退出确认')
+                expect(detail.get_by_role('button', name='取消调查', exact=True)).to_be_disabled()
+                expect(detail).not_to_contain_text('用户主动停止')
+                assert pending.result(15).status_code == 403
+                detail.get_by_role('button', name='刷新调查状态').click()
+                expect(detail).to_contain_text('单轮10分钟总时限已到')
+                expect(detail).to_contain_text('技术失败，未完成排查')
+                expect(detail).not_to_contain_text('正常排查结束')
+                page.reload()
+                expect(detail).to_contain_text('单轮10分钟总时限已到')
+                page.get_by_role('button', name='返回列表').click()
+                expect(page.get_by_role('region', name='调查详情')).to_have_count(0)
+            finally:
+                browser.close()
+
+
 def test_cancel_navigation_isolates_pending_errors_and_old_finally():
     with httpx.Client(base_url=BASE, trust_env=False) as client:
         records = []

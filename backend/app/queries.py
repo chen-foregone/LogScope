@@ -130,11 +130,15 @@ def query_router(engine, credential, sources, clock, schedule):
                     .with_for_update()).mappings().first()
                 if row is None:
                     raise HTTPException(403, '执行身份或轮次无效')
+                from app.deadlines import enforce_deadline, finalize_deadline
+                enforce_deadline(connection, row, clock())
+                pending = connection.begin_nested()
                 replay = connection.execute(select(queries).where(queries.c.attempt_id == attempt_id,
                     queries.c.request_key == idempotency_key)).mappings().first()
                 if replay:
                     if replay['execution_id'] != execution_id:
                         raise HTTPException(409, '查询请求身份冲突')
+                    finalize_deadline(connection, row, clock, pending)
                     response.status_code = 202 if replay['active'] else 200
                     return replay['material']
                 if connection.execute(select(queries.c.id).where(queries.c.attempt_id == attempt_id, queries.c.active.is_(True))).first():
@@ -171,19 +175,31 @@ def query_router(engine, credential, sources, clock, schedule):
                 connection.execute(insert(queries).values(id=identity, attempt_id=attempt_id, execution_id=execution_id,
                     request_key=idempotency_key, active=True, created_at=clock(), material=result))
                 connection.execute(update(investigations).where(investigations.c.id == investigation_id).values(updated_at=clock()))
+                finalize_deadline(connection, row, clock, pending)
+            total_end = asyncio.get_running_loop().time() + max(0, (row['deadline_at'] - clock()).total_seconds())
+
+            def stop_requested():
+                with engine.begin() as connection:
+                    connection.execute(select(investigations.c.id).where(
+                        investigations.c.id == investigation_id).with_for_update()).first()
+                    current = connection.execute(select(attempts).where(attempts.c.id == attempt_id)
+                                                 .with_for_update()).mappings().one()
+                    from app.deadlines import arbitrate_deadline
+                    observed_now = clock()
+                    if asyncio.get_running_loop().time() >= total_end:
+                        observed_now = max(observed_now, current['deadline_at'])
+                    timed_out = arbitrate_deadline(connection, current, observed_now)
+                    return current['cancel_requested_at'] is not None or timed_out
+
             async def controlled(operation):
-                with engine.connect() as connection:
-                    canceled = connection.execute(select(attempts.c.cancel_requested_at).where(
-                        attempts.c.id == attempt_id)).scalar_one() is not None
+                canceled = stop_requested()
                 if canceled:
                     raise QueryCanceled()
                 task = asyncio.create_task(operation())
                 try:
                     while True:
                         done, _ = await asyncio.wait({task}, timeout=0.1)
-                        with engine.connect() as connection:
-                            canceled = connection.execute(select(attempts.c.cancel_requested_at).where(
-                                attempts.c.id == attempt_id)).scalar_one() is not None
+                        canceled = stop_requested()
                         if canceled:
                             await wait_for_exit(task)
                             if not task.cancelled():
@@ -209,12 +225,19 @@ def query_router(engine, credential, sources, clock, schedule):
             def progress():
                 with engine.begin() as connection:
                     connection.execute(select(investigations.c.id).where(investigations.c.id == investigation_id).with_for_update()).first()
+                    current = connection.execute(select(attempts).where(attempts.c.id == attempt_id)
+                                                 .with_for_update()).mappings().one()
+                    enforce_deadline(connection, current, max(clock(), row['deadline_at'])
+                        if asyncio.get_running_loop().time() >= total_end else clock())
                     valid = connection.execute(select(executions.c.id).join(attempts, attempts.c.id == executions.c.attempt_id).where(
                         executions.c.id == execution_id, executions.c.valid.is_(True), attempts.c.status == '调查中')).first()
                     if valid is None:
                         raise HTTPException(403, '执行身份或轮次无效')
+                    pending = connection.begin_nested()
                     connection.execute(update(queries).where(queries.c.id == identity).values(active=True, material=result))
                     connection.execute(update(investigations).where(investigations.c.id == investigation_id).values(updated_at=clock()))
+                    finalize_deadline(connection, current, lambda: max(clock(), row['deadline_at'])
+                        if asyncio.get_running_loop().time() >= total_end else clock(), pending)
 
             for source_id, state in zip(row['source_ids'], result['sources']):
                 if state['state'] == 'skipped':
@@ -230,8 +253,12 @@ def query_router(engine, credential, sources, clock, schedule):
                         if not inspect.iscoroutinefunction(adapter.query):
                             state['attempts'] = 0
                             raise SourceFailure('adapter_error')
+                        remaining = max(0, min(total_end - asyncio.get_running_loop().time(),
+                                               (row['deadline_at'] - clock()).total_seconds()))
+                        if remaining <= 0:
+                            raise TimeoutError()
                         output = await controlled(lambda: schedule.deadline(adapter.query(source_id=source_id,
-                            starts_at=row['starts_at'], ends_at=row['ends_at']), 30))
+                            starts_at=row['starts_at'], ends_at=row['ends_at']), min(30, remaining)))
                         if output is not None:
                             raise SourceFailure('adapter_error')
                     except QueryCanceled:
@@ -271,14 +298,20 @@ def query_router(engine, credential, sources, clock, schedule):
                     state['state'] = 'waiting'
                     progress()
                     # 每次等待从失败退出后开始，2/5秒不是调用开始偏移。
-                    await controlled(lambda: schedule.wait(delay))
+                    await controlled(lambda: schedule.wait(min(delay, max(0, min(
+                        total_end - asyncio.get_running_loop().time(), (row['deadline_at'] - clock()).total_seconds())))))
             result['status'] = 'finished'
             with engine.begin() as connection:
                 connection.execute(select(investigations.c.id).where(investigations.c.id == investigation_id).with_for_update()).first()
+                current = connection.execute(select(attempts).where(attempts.c.id == attempt_id)
+                                             .with_for_update()).mappings().one()
+                enforce_deadline(connection, current, max(clock(), row['deadline_at'])
+                    if asyncio.get_running_loop().time() >= total_end else clock())
                 valid = connection.execute(select(executions.c.id).join(attempts, attempts.c.id == executions.c.attempt_id).where(
                     executions.c.id == execution_id, executions.c.valid.is_(True), attempts.c.status == '调查中')).first()
                 if valid is None:
                     raise HTTPException(403, '执行身份或轮次无效')
+                pending = connection.begin_nested()
                 for source_id, state in sorted(zip(row['source_ids'], result['sources']),
                                                key=lambda pair: source_keys[pair[0]]):
                     retry_at = state.get('retry_not_before')
@@ -295,6 +328,8 @@ def query_router(engine, credential, sources, clock, schedule):
                     connection.execute(update(executions).where(executions.c.id == execution_id).values(valid=False))
                     values['retention_expires_at'] = now + timedelta(days=30)
                 connection.execute(update(investigations).where(investigations.c.id == investigation_id).values(**values))
+                finalize_deadline(connection, current, lambda: max(clock(), row['deadline_at'])
+                    if asyncio.get_running_loop().time() >= total_end else clock(), pending)
             return result
         except (QueryCanceled, HTTPException) as error:
             if 'result' in locals():
@@ -302,12 +337,13 @@ def query_router(engine, credential, sources, clock, schedule):
                     with engine.begin() as connection:
                         connection.execute(select(investigations.c.id).where(
                             investigations.c.id == investigation_id).with_for_update()).first()
-                        canceled = connection.execute(select(attempts.c.cancel_requested_at).where(
-                            attempts.c.id == attempt_id)).scalar_one_or_none()
+                        stopping = connection.execute(select(attempts).where(
+                            attempts.c.id == attempt_id).with_for_update()).mappings().first()
+                        canceled = stopping and (stopping['cancel_requested_at'] or stopping['timeout_requested_at'])
                         owned = connection.execute(select(queries.c.id).where(queries.c.id == identity,
                             queries.c.active.is_(True))).first()
                         if canceled is not None and owned:
-                            result['status'] = 'canceled'
+                            result['status'] = 'canceled' if stopping['cancel_requested_at'] else 'timed_out'
                             for source_id, state in sorted(zip(row['source_ids'], result['sources']),
                                                            key=lambda pair: source_keys[pair[0]]):
                                 retry_at = state.get('retry_not_before')

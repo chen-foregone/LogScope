@@ -305,7 +305,8 @@ def test_upgrade_keeps_legacy_evidence_without_guessing_identity(database_url, t
         cwd=ROOT, env={**os.environ, 'DATABASE_URL': database_url, 'PYTHONPATH': str(ROOT / 'backend')}, capture_output=True)
     assert migrated.returncode == 0, '0004旧schema升级失败'
     credential = uuid4().hex
-    with configured_client(database_url, tmp_path, executor_credential=credential) as client:
+    # 历史身份回归在原轮期限内验证；真实过期升级另由08覆盖。
+    with configured_client(database_url, tmp_path, executor_credential=credential, clock=lambda: now) as client:
         path = '/api/investigations/' + str(investigation)
         detail = client.get(path).json()
         assert detail['evidence_count'] == 2

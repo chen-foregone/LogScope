@@ -8,7 +8,7 @@ from sqlalchemy import select
 from app.attempts import attempts, executions
 
 
-def execution_router(engine, credential):
+def execution_router(engine, credential, clock):
     router = APIRouter(prefix="/executor", include_in_schema=False)
 
     def authorize(authorization):
@@ -23,7 +23,7 @@ def execution_router(engine, credential):
             rows = connection.execute(select(executions.c.id, executions.c.attempt_id).join(
                 attempts, attempts.c.id == executions.c.attempt_id).where(
                 attempts.c.investigation_id == investigation_id, attempts.c.id == attempt_id,
-                attempts.c.status == "调查中", executions.c.valid.is_(True))).mappings().all()
+                attempts.c.status == "调查中", attempts.c.deadline_at > clock(), executions.c.valid.is_(True))).mappings().all()
         if not rows:
             raise HTTPException(403, "执行身份或轮次无效")
         return {"executions": [dict(row) for row in rows]}
@@ -36,7 +36,7 @@ def execution_router(engine, credential):
             row = connection.execute(select(attempts).join(executions, executions.c.attempt_id == attempts.c.id).where(
                 attempts.c.investigation_id == investigation_id, attempts.c.id == attempt_id,
                 executions.c.id == execution_id, executions.c.valid.is_(True),
-                attempts.c.status == "调查中")).mappings().first()
+                attempts.c.status == "调查中", attempts.c.deadline_at > clock())).mappings().first()
         if row is None:
             raise HTTPException(403, "执行身份或轮次无效")
         return {"investigation_id": investigation_id, "attempt_id": attempt_id, "execution_id": execution_id,
