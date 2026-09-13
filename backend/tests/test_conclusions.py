@@ -150,14 +150,21 @@ def test_safety_late_writes_and_completed_replays(database_url, tmp_path, caplog
         import subprocess
         from urllib.parse import urlsplit, parse_qs
         schema = parse_qs(urlsplit(database_url).query)['options'][0].split('=')[1]
-        dumped = subprocess.run(['docker', 'exec', 'logscope-01-test-pg17', 'pg_dump', '-U', 'logscope_test',
+        dumped = subprocess.run(['docker', 'exec', '-e', 'PGOPTIONS=-c max_parallel_workers_per_gather=0', 'logscope-01-test-pg17', 'pg_dump', '-U', 'logscope_test',
             '-d', 'logscope_test', '--data-only', '--schema', schema], capture_output=True)
         assert dumped.returncode == 0
         assert secret.encode() not in dumped.stdout and credential.encode() not in dumped.stdout, '结论持久产物泄漏原值'
         attempt = before['attempts'][0]
         start_body = {'service_id': 'orders', 'starts_at': attempt['starts_at'], 'ends_at': attempt['ends_at']}
-        # 新键也不可把05正常结束扩成09重开。
-        assert client.post(path + '/attempts', json=start_body, headers={'Idempotency-Key': str(uuid4())}).status_code == 409
+        # 09允许新键手动新轮，但旧执行不能复活或修改新轮。
+        reopened = client.post(path + '/attempts', json=start_body, headers={'Idempotency-Key': str(uuid4())})
+        assert reopened.status_code == 201
+        current = reopened.json()
+        assert current['attempts'][0] == after['attempts'][0]
+        assert current['evidence_count'] == 0
+        assert client.post(endpoint, json=proposal(), headers=headers).json() == after['attempts'][0]['conclusion']
+        assert client.post(evidence_endpoint, json=material(), headers=auth).status_code == 403
+        assert client.get(path).json() == current
 
 
 def test_unknown_causal_fields_and_unavailable_material_prevent_confirmation(database_url, tmp_path, caplog):

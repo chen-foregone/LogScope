@@ -19,8 +19,11 @@ const queryStates: Record<string, string> = { canceled: '已停止，结果不�
 const queryReasons: Record<string, string> = { network: '临时网络故障', timeout: '单次查询30秒超时', permission: '权限不足', credentials: '凭据无效', parameters: '查询参数无效', rate_limited: '来源限流', inflight: '来源已有在途查询，等待退出后再试', not_configured: '未配置受控查询适配器', adapter_error: '适配器能力或返回不符合受控契约' }
 const conclusionLabels = { hypothesis: '待验证假设', confirmed: '已确认根因', undetermined: '未确定根因' }
 const missingLabels: Record<string, string> = { causal_trace: '同调用因果传播轨迹', dependency_observation: '依赖调用观测', alternative_exclusion: '替代解释排除依据' }
-function locateEvidence(id: string) {
-  document.getElementById(`evidence-${id}`)?.scrollIntoView({ block: 'center' })
+function locateEvidence(attemptId: string, id: string) {
+  document.getElementById(`evidence-${attemptId}-${id}`)?.scrollIntoView({ block: 'center' })
+}
+function locateAttempt(id: string) {
+  document.getElementById(`attempt-${id}`)?.scrollIntoView({ block: 'start' })
 }
 type Investigation = {
   id: string
@@ -28,9 +31,11 @@ type Investigation = {
   description: string
   service: string | null
   status: '待处理' | '调查中' | '已完成' | '失败' | '已取消'
-  severity: '未评估'
+  severity: '未评估' | '高' | '中' | '低'
+  severity_source: 'human' | 'agent' | null
+  severity_assessed_at: string | null
   evidence_count: number
-  attempts: { id: string; execution_phase: string; cancel_requested_at: string | null; deadline_at: string; timeout_requested_at: string | null; stop_confirmed_at: string | null; service_id: string; starts_at: string; ends_at: string; status: string; execution_mode: 'controlled'; evidence_count: number; evidence: Evidence[]; evidence_notices: string[]; ended_at: string | null; result: string | null; end_reason: string | null; conclusion: Conclusion | null; conclusions: Conclusion[]; queries: QueryRun[]; query_coverage: { complete: boolean; missing_sources: string[]; notice: string } }[]
+  attempts: { id: string; attempt_number: number; execution_phase: string; cancel_requested_at: string | null; deadline_at: string; timeout_requested_at: string | null; stop_confirmed_at: string | null; service_id: string; starts_at: string; ends_at: string; status: string; execution_mode: 'controlled'; evidence_count: number; evidence: Evidence[]; evidence_notices: string[]; ended_at: string | null; result: string | null; end_reason: string | null; conclusion: Conclusion | null; conclusions: Conclusion[]; queries: QueryRun[]; query_coverage: { complete: boolean; missing_sources: string[]; notice: string } }[]
   created_at: string
   updated_at: string
   retention_expires_at: string | null
@@ -63,7 +68,76 @@ async function cancelInvestigation(attemptId: string) {
 }
 const starting = ref(false)
 const startError = ref('')
-let pendingStart: { key: string; body: string } | null = null
+type PendingStart = { key: string; body: string }
+const pendingStart = ref<PendingStart | null>(null)
+const startBlocked = ref(false)
+const blockedStarts = new Set<string>()
+const storageWarning = '原启动身份无法恢复：待确认信息损坏或会话存储不可用，无法安全判断原请求。已阻断新启动；调查详情仍可读取。请保留当前会话并联系维护者核验原请求，不要清除存储或放弃后新开。'
+const uuidPattern = /^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$/i
+const startStorageKey = (id: string) => `logscope:pending-start:${id.toLowerCase()}`
+function parseStart(saved: string): PendingStart {
+  const pending = JSON.parse(saved)
+  if (!pending || typeof pending !== 'object' || Array.isArray(pending) ||
+    Object.keys(pending).sort().join(',') !== 'body,key' ||
+    typeof pending.key !== 'string' || !uuidPattern.test(pending.key) || typeof pending.body !== 'string') throw new Error(storageWarning)
+  const payload = JSON.parse(pending.body)
+  if (!payload || typeof payload !== 'object' || Array.isArray(payload) ||
+    typeof payload.service_id !== 'string' || !payload.service_id.trim() || payload.service_id.length > 80 ||
+    Object.keys(payload).some(key => !['service_id', 'starts_at', 'ends_at'].includes(key))) throw new Error(storageWarning)
+  if ('starts_at' in payload || 'ends_at' in payload) {
+    const absolute = /^(\d{4})-(\d{2})-(\d{2})T([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d)(?:[.,](\d+))?)?([zZ]|([+-])([01]\d|2[0-3]):?([0-5]\d))$/
+    const parseAbsolute = (value: unknown): bigint | null => {
+      const parts = typeof value === 'string' ? absolute.exec(value) : null
+      if (!parts) return null
+      const year = Number(parts[1]), month = Number(parts[2]), day = Number(parts[3])
+      const leap = year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0)
+      const days = [31, leap ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31]
+      if (year < 1 || month < 1 || month > 12 || day < 1 || day > days[month - 1]!) return null
+      const date = new Date(0)
+      date.setUTCFullYear(year, month - 1, day)
+      date.setUTCHours(Number(parts[4]), Number(parts[5]), Number(parts[6] ?? 0), 0)
+      const offset = parts[9] ? (parts[9] === '+' ? 1 : -1) * (Number(parts[10]) * 60 + Number(parts[11])) : 0
+      // Pydantic按微秒截断小数；只计算校验值，绝不改写原请求body。
+      return BigInt(date.getTime() - offset * 60000) * 1000n + BigInt((parts[7] ?? '').slice(0, 6).padEnd(6, '0'))
+    }
+    const starts = parseAbsolute(payload.starts_at), ends = parseAbsolute(payload.ends_at)
+    if (starts === null || ends === null || !(ends > starts && ends - starts <= 86400000000n)) throw new Error(storageWarning)
+  }
+  return pending
+}
+function restoreStart(id: string) {
+  pendingStart.value = null
+  startBlocked.value = false
+  try {
+    if (blockedStarts.has(id)) throw new Error(storageWarning)
+    const saved = sessionStorage.getItem(startStorageKey(id))
+    pendingStart.value = saved === null ? null : parseStart(saved)
+  } catch {
+    blockedStarts.add(id)
+    startBlocked.value = true
+  }
+  const payload = pendingStart.value ? JSON.parse(pendingStart.value.body) : null
+  serviceId.value = payload?.service_id ?? ''
+  rangeMode.value = payload?.starts_at ? 'absolute' : 'recent'
+  startsAt.value = payload?.starts_at ?? ''
+  endsAt.value = payload?.ends_at ?? ''
+}
+function clearStart(id: string, pending: PendingStart) {
+  try {
+    const saved = sessionStorage.getItem(startStorageKey(id))
+    if (saved !== null) {
+      const stored = JSON.parse(saved)
+      if (stored?.key === pending.key && stored?.body === pending.body) {
+        sessionStorage.removeItem(startStorageKey(id))
+        blockedStarts.delete(id)
+        return true
+      }
+    }
+  } catch {
+    // 迟到回调只记录所属调查的故障，不污染当前页面。
+    blockedStarts.add(id)
+  }
+}
 
 const investigations = ref<Investigation[]>([])
 const selected = ref<Investigation | null>(null)
@@ -98,14 +172,18 @@ async function loadPage() {
   selected.value = null
   canceling.value = null
   cancelError.value = ''
-  pendingStart = null
+  pendingStart.value = null
+  startBlocked.value = false
   starting.value = false
   serviceId.value = ''
   rangeMode.value = 'recent'
+  startsAt.value = ''
+  endsAt.value = ''
   startError.value = ''
   try {
-    const id = location.hash.match(/^#\/investigations\/([a-f0-9-]+)$/i)?.[1]
+    const id = location.hash.match(/^#\/investigations\/([a-f0-9-]+)$/i)?.[1]?.toLowerCase()
     if (id) {
+      restoreStart(id)
       const record = await request<Investigation>(`/${id}`)
       if (sequence === readSequence) selected.value = record
     } else {
@@ -130,28 +208,54 @@ async function loadServices() {
 }
 
 async function startInvestigation() {
-  if (starting.value || !selected.value) return
+  if (starting.value || !selected.value || startBlocked.value) return
+  if (!pendingStart.value && (!serviceId.value || !services.value.some(service => service.id === serviceId.value))) return
+  const id = selected.value.id
   const payload = rangeMode.value === 'recent' ? { service_id: serviceId.value } : {
     service_id: serviceId.value, starts_at: startsAt.value, ends_at: endsAt.value,
   }
-  const body = JSON.stringify(payload)
-  if (!pendingStart || pendingStart.body !== body) pendingStart = { key: crypto.randomUUID(), body }
-  const id = selected.value.id
+  const pending = pendingStart.value ?? { key: crypto.randomUUID(), body: JSON.stringify(payload) }
   const route = location.hash
   const sequence = readSequence
   const isCurrent = () => sequence === readSequence && location.hash === route && selected.value?.id === id
   starting.value = true
   startError.value = ''
   try {
-    const record = await request<Investigation>(`/${id}/attempts`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': pendingStart.key }, body,
+    // 先持久化身份再发送；存储不可用时不发送无法跨刷新确认的请求。
+    try {
+      sessionStorage.setItem(startStorageKey(id), JSON.stringify(pending))
+    } catch {
+      blockedStarts.add(id)
+      if (isCurrent()) startBlocked.value = true
+      return
+    }
+    pendingStart.value = pending
+    const response = await fetch(`/api/investigations/${id}/attempts`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json', 'Idempotency-Key': pending.key }, body: pending.body,
     })
+    if (!response.ok) {
+      const problem = await response.json().catch(() => null)
+      // 明确的校验/接纳拒绝允许修正输入；网络错误与5xx仍须同键确认。
+      if ([404, 409, 422].includes(response.status)) {
+        const cleared = clearStart(id, pending)
+        if (isCurrent() && cleared) {
+          pendingStart.value = null
+          startBlocked.value = false
+        } else if (isCurrent() || (selected.value?.id === id && (pendingStart.value?.key === pending.key || cleared))) restoreStart(id)
+      }
+      const detail = problem?.detail
+      throw new Error(typeof detail === 'string' ? detail : Array.isArray(detail) ? detail.map(item => item.msg).join('；') : '启动结果未确认，请重试原请求')
+    }
+    const record = await response.json() as Investigation
+    clearStart(id, pending)
     if (isCurrent()) {
       selected.value = record
-      pendingStart = null
+      restoreStart(id)
+    } else if (selected.value?.id === id && pendingStart.value?.key === pending.key) {
+      restoreStart(id)
     }
   } catch (cause) {
-    if (isCurrent()) startError.value = cause instanceof Error ? cause.message : '启动失败，请重试'
+    if (isCurrent()) startError.value = cause instanceof Error ? cause.message : '启动结果未确认，请重试原请求'
   } finally {
     if (isCurrent()) starting.value = false
   }
@@ -236,16 +340,19 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
           <p class="description-copy">{{ selected.description || '未填写问题描述' }}</p>
           <dl class="detail-grid">
             <div><dt>状态</dt><dd>{{ selected.status }}</dd></div>
-            <div><dt>严重程度</dt><dd>{{ selected.severity }}</dd></div>
+            <div><dt>严重程度</dt><dd>{{ selected.severity }}<template v-if="selected.severity_assessed_at"> · {{ selected.severity_source === 'human' ? '人工评估' : 'Agent评估' }}于 {{ displayTime(selected.severity_assessed_at) }}；保留等级不代表已验证当前影响。</template><template v-else> · 尚未评估，不表示低风险</template></dd></div>
             <div><dt>被调查服务</dt><dd>{{ selected.service || '未选择服务' }}</dd></div>
             <div><dt>证据</dt><dd>证据条数：{{ selected.evidence_count }}</dd></div>
             <div><dt>创建时间</dt><dd>{{ displayTime(selected.created_at) }}</dd></div>
             <div><dt>最后更新时间</dt><dd>{{ displayTime(selected.updated_at) }}</dd></div>
             <div><dt>保留至</dt><dd>{{ selected.retention_expires_at ? displayTime(selected.retention_expires_at) : '运行中不清理；结束后计算保留期' }}</dd></div>
           </dl>
+          <p v-if="startBlocked" role="alert" class="form-error">{{ storageWarning }}</p>
           <h3>调查尝试</h3>
           <template v-if="selected.attempts.length">
-            <div v-for="attempt in selected.attempts" :key="attempt.id">
+            <nav aria-label="逐轮导航"><el-button v-for="attempt in selected.attempts" :key="attempt.id" @click="locateAttempt(attempt.id)">第{{ attempt.attempt_number }}轮 · {{ attempt.status }}</el-button></nav>
+            <section v-for="attempt in selected.attempts" :id="`attempt-${attempt.id}`" :key="attempt.id" :aria-label="`第${attempt.attempt_number}轮${attempt.id === selected.attempts.at(-1)?.id ? '当前' : '历史'}`">
+              <h3>第{{ attempt.attempt_number }}轮 · {{ attempt.id === selected.attempts.at(-1)?.id ? '当前轮' : '历史（只读）' }}</h3>
               <p>服务：{{ attempt.service_id }} · {{ attempt.status }}</p>
               <el-button v-if="attempt.status === '调查中'" :disabled="canceling === attempt.id || attempt.execution_phase === 'stopping' || attempt.execution_phase === 'timeout_stopping'" @click="cancelInvestigation(attempt.id)">取消调查</el-button>
               <p v-if="attempt.execution_phase === 'stopping'" role="status">正在停止：尚未确认执行终止，仍为调查中、继续占用运行名额，不能启动新轮。请刷新调查状态查看确认结果。</p>
@@ -282,7 +389,7 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
                 <p v-if="conclusion.alternatives">替代解释：{{ conclusion.alternatives }}</p>
                 <p v-if="conclusion.contradictions">关键矛盾：{{ conclusion.contradictions }}</p>
                 <p>现有依据：<span v-if="!conclusion.evidence_ids.length">无已纳入证据，不表示没有故障。</span></p>
-                <p v-for="id in conclusion.evidence_ids" :key="id"><a :href="`#evidence-${id}`" @click.prevent="locateEvidence(id)">查看证据 {{ id }}</a></p>
+                <p v-for="id in conclusion.evidence_ids" :key="id"><a :href="`#evidence-${attempt.id}-${id}`" @click.prevent="locateEvidence(attempt.id, id)">查看证据 {{ id }}</a></p>
                 <p v-if="conclusion.missing.length">缺失证据：{{ conclusion.missing.map(item => missingLabels[item]).join('、') }}</p>
                 <p>{{ conclusion.boundary }}</p>
                 <p>修复建议仅供参考，不执行环境写操作。</p>
@@ -291,7 +398,7 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
               <p>本轮证据条数：{{ attempt.evidence_count }}；可靠身份重复只计一次，缺少可靠身份逐条保留。不表示日志扫描量、故障数、根因数或覆盖完整率。</p>
               <p v-if="!attempt.evidence.length">尚无已保存证据。</p>
               <p v-for="notice in attempt.evidence_notices" :key="notice" role="status">{{ notice }}</p>
-              <article v-for="item in attempt.evidence" :id="`evidence-${item.id}`" :key="item.id" aria-label="脱敏证据" class="evidence-card">
+              <article v-for="item in attempt.evidence" :id="`evidence-${attempt.id}-${item.id}`" :key="item.id" aria-label="脱敏证据" class="evidence-card">
                 <dl>
                   <dt>来源</dt><dd>{{ item.source }}</dd>
                   <dt>发生时间</dt><dd>{{ displayTime(item.occurred_at) }}</dd>
@@ -301,21 +408,25 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
                   <dt>脱敏说明</dt><dd>{{ item.redaction_note }}</dd>
                 </dl>
               </article>
-            </div>
+            </section>
           </template>
-          <template v-else>
-            <p>尚无调查尝试，未启动排查。</p>
+          <p v-else>尚无调查尝试，未启动排查。</p>
+          <template v-if="pendingStart || !selected.attempts.some(attempt => attempt.status === '调查中')">
+            <h3 v-if="pendingStart">启动结果待确认</h3>
+            <h3 v-else-if="selected.attempts.length">手动发起新一轮</h3>
+            <p v-if="pendingStart" role="status">原请求的服务和范围已锁定。刷新或看到终态不代表已确认本次启动；请重试原请求并读取当前结果，不会额外创建一轮。确认成功后才可显式发起下一轮。待确认信息仅保存在当前标签页会话，请勿清除站点存储或关闭标签页。</p>
+            <p v-if="selected.attempts.length">历史轮次只读保留；新轮不自动继承历史证据、结论或查询覆盖，无累计次数上限。</p>
             <form @submit.prevent="startInvestigation">
-              <p><label for="start-service">被调查服务</label> <select id="start-service" v-model="serviceId" :disabled="starting"><option value="">请选择已配置服务</option><option v-for="service in services" :key="service.id" :value="service.id">{{ service.name }}</option></select></p>
+              <p><label for="start-service">被调查服务</label> <select id="start-service" v-model="serviceId" :disabled="starting || !!pendingStart || startBlocked"><option value="">请选择已配置服务</option><option v-for="service in services" :key="service.id" :value="service.id">{{ service.name }}</option></select></p>
               <p v-if="!services.length">尚无可选服务，请由维护者配置后端服务目录。</p>
-              <p><label for="range-mode">范围模式</label> <select id="range-mode" v-model="rangeMode" :disabled="starting"><option value="recent">最近1小时（启动时由服务器计算）</option><option value="absolute">绝对起止时间（最多24小时）</option></select></p>
+              <p><label for="range-mode">范围模式</label> <select id="range-mode" v-model="rangeMode" :disabled="starting || !!pendingStart || startBlocked"><option value="recent">最近1小时（启动时由服务器计算）</option><option value="absolute">绝对起止时间（最多24小时）</option></select></p>
               <template v-if="rangeMode === 'absolute'">
-                <p><label for="starts-at">日志开始时间</label> <input id="starts-at" v-model="startsAt" :disabled="starting" placeholder="2026-10-30T08:00:00+08:00" /></p>
-                <p><label for="ends-at">日志结束时间</label> <input id="ends-at" v-model="endsAt" :disabled="starting" placeholder="2026-10-31T08:00:00+08:00" /></p>
+                <p><label for="starts-at">日志开始时间</label> <input id="starts-at" v-model="startsAt" :disabled="starting || !!pendingStart || startBlocked" placeholder="2026-10-30T08:00:00+08:00" /></p>
+                <p><label for="ends-at">日志结束时间</label> <input id="ends-at" v-model="endsAt" :disabled="starting || !!pendingStart || startBlocked" placeholder="2026-10-31T08:00:00+08:00" /></p>
                 <p>请输入带时区的绝对时间；恰好24小时允许。</p>
               </template>
               <p v-if="startError" role="alert" class="form-error">{{ startError }}</p>
-              <el-button type="primary" native-type="submit" :loading="starting" :disabled="!serviceId || !services.length">启动调查</el-button>
+              <el-button type="primary" native-type="submit" :loading="starting" :disabled="startBlocked || (!pendingStart && (!serviceId || !services.some(service => service.id === serviceId)))">{{ pendingStart ? '重试原请求并确认结果' : selected.attempts.length ? '启动新一轮' : '启动调查' }}</el-button>
             </form>
             <p class="page-subtitle">无轮记录从创建起保留 30 天；查看不会延长期限。</p>
           </template>

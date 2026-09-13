@@ -485,6 +485,23 @@ def test_started_attempt_survives_real_process_restart(database_url, tmp_path):
         assert client.post(conclusion_endpoint, json=proposal(), headers=conclusion_headers).json() == completed.json()
         assert client.post(endpoint, json=payload, headers=auth).status_code == 403
         assert client.get(controlled, headers=auth).status_code == 403
+        reopened_reply = client.post(path + '/attempts', json={'service_id': 'orders'},
+                                     headers={'Idempotency-Key': str(uuid4())})
+        assert reopened_reply.status_code == 201
+        reopened = reopened_reply.json()
+        assert reopened['attempts'][0] == finished['attempts'][0]
+        assert reopened['evidence_count'] == 0
+        second = reopened['attempts'][-1]
+        canceled = client.post(path + '/attempts/' + second['id'] + '/cancel').json()
+        assert canceled['status'] == '已取消'
+    with server() as client:
+        assert client.get(path).json() == canceled
+        assert [a['attempt_number'] for a in canceled['attempts']] == [1, 2]
+        for history in canceled['attempts']:
+            assert client.get(path + '/attempts/' + history['id']).json() == history
+        assert client.post(path + '/attempts', json={'service_id': 'orders'}, headers=headers).json() == canceled
+        assert client.post(conclusion_endpoint, json=proposal(), headers=conclusion_headers).json() == completed.json()
+        assert client.get(path).json() == canceled
 
 
 def test_configured_services_are_available_without_secrets(database_url, tmp_path):

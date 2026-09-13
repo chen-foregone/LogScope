@@ -13,6 +13,8 @@ investigations = Table(
     "investigations", metadata,
     Column("id", Uuid, primary_key=True),
     Column("request_key", Uuid, unique=True),
+    Column("severity", String(20)), Column("severity_source", String(20)),
+    Column("severity_assessed_at", DateTime(timezone=True)),
     Column("title", String(200), nullable=False),
     Column("description", String(4000), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
@@ -39,7 +41,9 @@ class InvestigationView(BaseModel):
     title: str
     description: str
     status: Literal["待处理", "调查中", "已完成", "失败", "已取消"]
-    severity: Literal["未评估"]
+    severity: Literal["未评估", "高", "中", "低"]
+    severity_source: Literal['human', 'agent'] | None
+    severity_assessed_at: datetime | None
     service: str | None
     attempts: list[dict]
     evidence_count: int
@@ -59,7 +63,7 @@ def representation(row, attempts=None):
         **{key: value for key, value in row.items() if key != "request_key"}, "id": str(row["id"]),
         **{key: row[key].astimezone(timezone.utc).isoformat().replace("+00:00", "Z") if row[key] else None
            for key in ("created_at", "updated_at", "retention_expires_at")},
-        "status": attempts[-1]["status"] if attempts else "待处理", "severity": "未评估",
+        "status": attempts[-1]["status"] if attempts else "待处理",
         "service": attempts[-1]["service_id"] if attempts else None,
         "attempts": attempts, "evidence_count": len(attempts[-1]['evidence']) if attempts else 0,
     }

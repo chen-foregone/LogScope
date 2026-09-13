@@ -7,7 +7,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Header, HTTPException, Response
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, JSON, String, Table, Text, Uuid, insert, select, update
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String, Table, Text, Uuid, insert, select, update
 
 from app.investigations import InvestigationView, investigations, metadata, representation
 
@@ -16,6 +16,7 @@ attempts = Table(
     Column("id", Uuid, primary_key=True),
     Column("investigation_id", Uuid, ForeignKey("investigations.id")),
     Column("request_key", Uuid), Column("request_body", Text),
+    Column("attempt_number", Integer),
     Column("service_id", String(80)), Column("source_ids", JSON),
     Column("starts_at", DateTime(timezone=True)), Column("ends_at", DateTime(timezone=True)),
     Column("created_at", DateTime(timezone=True)), Column("status", String(20)),
@@ -60,7 +61,7 @@ class StartAttempt(BaseModel):
 
 def attempt_views(connection, investigation_id):
     rows = connection.execute(select(attempts).where(attempts.c.investigation_id == investigation_id)
-                              .order_by(attempts.c.created_at, attempts.c.id)).mappings().all()
+                              .order_by(attempts.c.attempt_number)).mappings().all()
     from app.evidence import evidence_views
     views = []
     for row in rows:
@@ -74,13 +75,17 @@ def attempt_views(connection, investigation_id):
         history = conclusion_views(connection, row['id'])
         from app.queries import query_views, query_coverage, coverage_aliases
         queried = query_views(connection, row['id'])
-        views.append({key: row[key] for key in ('id', 'service_id', 'starts_at', 'ends_at', 'created_at', 'deadline_at', 'status', 'ended_at', 'result', 'end_reason')}
+        views.append({key: row[key] for key in ('id', 'attempt_number', 'service_id', 'starts_at', 'ends_at', 'created_at', 'deadline_at', 'status', 'ended_at', 'result', 'end_reason')}
             | {'execution_mode': 'controlled', 'evidence': saved, 'evidence_count': len(saved), 'evidence_notices': notices,
                'conclusions': history, 'conclusion': history[-1] if history else None,
                'queries': queried, 'query_coverage': query_coverage(queried, coverage_aliases(connection, row['id'], row['source_ids'])),
                'cancel_requested_at': row['cancel_requested_at'], 'stop_confirmed_at': row['stop_confirmed_at'],
                'stop_confirmation': row['stop_confirmation'], 'timeout_requested_at': row['timeout_requested_at'],
                'execution_phase': 'stopped' if row['status'] != '调查中' else ('stopping' if row['cancel_requested_at'] else 'timeout_stopping' if row['timeout_requested_at'] else 'running')})
+    for view in views:
+        for key, value in view.items():
+            if isinstance(value, datetime):
+                view[key] = value.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')
     return views
 
 
@@ -127,15 +132,20 @@ def attempt_router(engine, services, adapter, clock):
             if connection.execute(select(attempts.c.id).where(
                     attempts.c.investigation_id == investigation_id, attempts.c.status == "调查中")).first():
                 raise HTTPException(409, "已有调查中轮次，不能修改服务或范围，也不能重复启动")
-            if connection.execute(select(attempts.c.id).where(attempts.c.investigation_id == investigation_id)).first():
-                raise HTTPException(409, "历史轮次已结束；手动新轮契约由后续工单09提供")
+            from app.queries import queries
+            if connection.execute(select(queries.c.id).join(attempts, attempts.c.id == queries.c.attempt_id).where(
+                    attempts.c.investigation_id == investigation_id, queries.c.active.is_(True))).first():
+                raise HTTPException(409, "旧轮查询尚未确认退出，不能启动新轮")
             service = services.get(payload.service_id)
             if service is None:
                 raise HTTPException(422, "服务未配置或无效，尚未启动")
             now = clock()
             attempt_id = uuid4()
+            previous_number = connection.execute(select(attempts.c.attempt_number).where(
+                attempts.c.investigation_id == investigation_id).order_by(attempts.c.attempt_number.desc()).limit(1)).scalar_one_or_none()
             connection.execute(insert(attempts).values(
                 id=attempt_id, investigation_id=investigation_id, request_key=idempotency_key,
+                attempt_number=(previous_number or 0) + 1,
                 request_body=body, service_id=service.id, source_ids=service.source_ids,
                 starts_at=payload.starts_at or now - timedelta(hours=1), ends_at=payload.ends_at or now,
                 created_at=now, deadline_at=now + timedelta(minutes=10), status="调查中"))

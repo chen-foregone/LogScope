@@ -70,7 +70,7 @@ def test_save_redacted_material_updates_real_detail_and_survives_restart(databas
         import subprocess
         from urllib.parse import urlsplit, parse_qs
         schema = parse_qs(urlsplit(database_url).query)['options'][0].split('=')[1]
-        dumped = subprocess.run(['docker', 'exec', 'logscope-01-test-pg17', 'pg_dump',
+        dumped = subprocess.run(['docker', 'exec', '-e', 'PGOPTIONS=-c max_parallel_workers_per_gather=0', 'logscope-01-test-pg17', 'pg_dump',
                                  '-U', 'logscope_test', '-d', 'logscope_test', '--data-only', '--schema', schema],
                                 capture_output=True)
         assert dumped.returncode == 0, '隔离测试schema安全审计导出失败'
@@ -198,7 +198,7 @@ def test_identity_schema_is_strict_and_never_persists_raw_values(database_url, t
             assert reply.status_code == 201
             assert secret not in reply.text + client.get(path).text + caplog.text, '公共输出含原始身份'
         schema = parse_qs(urlsplit(database_url).query)['options'][0].split('=')[1]
-        dumped = subprocess.run(['docker', 'exec', 'logscope-01-test-pg17', 'pg_dump', '-U', 'logscope_test',
+        dumped = subprocess.run(['docker', 'exec', '-e', 'PGOPTIONS=-c max_parallel_workers_per_gather=0', 'logscope-01-test-pg17', 'pg_dump', '-U', 'logscope_test',
                                  '-d', 'logscope_test', '--data-only', '--schema', schema], capture_output=True)
         assert dumped.returncode == 0, '隔离schema内存审计失败'
         for raw in [secret, credential, *payload['record']['fields'].values()]:

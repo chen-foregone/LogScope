@@ -10,6 +10,403 @@ from playwright.sync_api import sync_playwright, expect
 BASE = os.environ.get("UI_BASE_URL", "http://127.0.0.1:5173")
 
 
+def test_each_confirmed_round_resets_absolute_form_to_recent_hour():
+    with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client, sync_playwright() as p:
+        record = client.post('/api/investigations', json={'title': '每轮默认-' + uuid4().hex[:8]},
+                             headers={'Idempotency-Key': str(uuid4())}).json()
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.goto(BASE + '/#/investigations/' + record['id'])
+            page.get_by_label('被调查服务', exact=True).select_option('orders')
+            page.get_by_label('范围模式').select_option('absolute')
+            page.get_by_label('日志开始时间').fill('2026-11-01T00:00:00Z')
+            page.get_by_label('日志结束时间').fill('2026-11-01T01:00:00Z')
+            page.get_by_role('button', name='启动调查', exact=True).click()
+            page.get_by_role('button', name='取消调查', exact=True).click()
+            expect(page.get_by_label('范围模式')).to_have_value('recent')
+            page.get_by_label('范围模式').select_option('absolute')
+            expect(page.get_by_label('日志开始时间')).to_have_value('')
+            expect(page.get_by_label('日志结束时间')).to_have_value('')
+            page.get_by_label('范围模式').select_option('recent')
+            page.get_by_label('被调查服务', exact=True).select_option('orders')
+            with page.expect_response('**/attempts') as reply:
+                page.get_by_role('button', name='启动新一轮', exact=True).click()
+            latest = reply.value.json()['attempts'][-1]
+            assert reply.value.request.post_data_json == {'service_id': 'orders'}
+            assert (datetime.fromisoformat(latest['ends_at'].replace('Z', '+00:00')) -
+                    datetime.fromisoformat(latest['starts_at'].replace('Z', '+00:00'))).total_seconds() == 3600
+        finally:
+            browser.close()
+
+
+@pytest.mark.parametrize('refresh', ['spa', 'reload', 'navigation', 'uppercase'])
+def test_unconfirmed_start_survives_fast_terminal_refresh_and_isolates_investigations(refresh, evidence_executor):
+    with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client, sync_playwright() as p:
+        records = [client.post('/api/investigations', json={'title': '待确认-' + uuid4().hex[:8]},
+                              headers={'Idempotency-Key': str(uuid4())}).json() for _ in range(2)]
+        path = '/api/investigations/' + records[0]['id']
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            requests = []
+            def lose_after_terminal(route):
+                requests.append((route.request.headers['idempotency-key'], route.request.post_data))
+                reply = route.fetch()
+                assert reply.status == 201
+                attempt = reply.json()['attempts'][0]
+                # 仅测试进程持有执行凭据，经真实受控API令已接纳轮快速结束。
+                base = f'/api/executor/investigations/{records[0]["id"]}/attempts/{attempt["id"]}/executions'
+                identity = client.get(base, headers=evidence_executor).json()['executions'][0]['id']
+                assert client.post(base + '/' + identity + '/queries',
+                    headers={**evidence_executor, 'Idempotency-Key': str(uuid4())}).status_code == 201
+                assert client.get(path).json()['attempts'][0]['status'] == '失败'
+                route.abort('failed')
+            page.route('**/attempts', lose_after_terminal, times=1)
+            route_path = path.removeprefix('/api')
+            if refresh == 'uppercase':
+                route_path = '/investigations/' + records[0]['id'].upper()
+            page.goto(BASE + '/#' + route_path)
+            page.get_by_label('被调查服务', exact=True).select_option('orders')
+            page.get_by_label('范围模式').select_option('absolute')
+            page.get_by_label('日志开始时间').fill('2026-11-01T00:00:00Z')
+            page.get_by_label('日志结束时间').fill('2026-11-01T01:00:00Z')
+            page.get_by_role('button', name='启动调查', exact=True).click()
+            expect(page.get_by_role('alert')).to_be_visible()
+            if refresh == 'spa':
+                page.get_by_role('button', name='刷新调查状态').click()
+            elif refresh in ('reload', 'uppercase'):
+                page.reload()
+            else:
+                page.evaluate('(id) => location.hash = "/investigations/" + id', records[1]['id'])
+                expect(page.get_by_role('heading', name=records[1]['title'], exact=True)).to_be_visible()
+                expect(page.get_by_role('button', name='重试原请求并确认结果')).to_have_count(0)
+                page.get_by_label('被调查服务', exact=True).select_option('query-mixed')
+                page.get_by_role('button', name='启动调查', exact=True).click()
+                expect(page.get_by_role('button', name='取消调查', exact=True)).to_be_visible()
+                page.evaluate('(id) => location.hash = "/investigations/" + id', records[0]['id'])
+            expect(page.get_by_role('heading', name=records[0]['title'], exact=True)).to_be_visible()
+            expect(page.get_by_role('region', name='调查详情')).to_contain_text('启动结果待确认')
+            expect(page.get_by_label('被调查服务', exact=True)).to_have_value('orders')
+            expect(page.get_by_label('被调查服务', exact=True)).to_be_disabled()
+            expect(page.get_by_label('范围模式')).to_have_value('absolute')
+            expect(page.get_by_label('范围模式')).to_be_disabled()
+            expect(page.get_by_label('日志开始时间')).to_have_value('2026-11-01T00:00:00Z')
+            expect(page.get_by_label('日志结束时间')).to_be_disabled()
+            expect(page.get_by_role('button', name='启动新一轮', exact=True)).to_have_count(0)
+            with page.expect_response('**/attempts') as replay:
+                page.get_by_role('button', name='重试原请求并确认结果').click()
+            assert replay.value.status == 200
+            assert (replay.value.request.headers['idempotency-key'], replay.value.request.post_data) == requests[0]
+            assert len(client.get(path).json()['attempts']) == 1
+            expect(page.get_by_role('button', name='启动新一轮', exact=True)).to_be_visible()
+            expect(page.get_by_label('范围模式')).to_have_value('recent')
+            storage = page.evaluate('JSON.stringify(sessionStorage)')
+            assert evidence_executor['Authorization'] not in storage
+            assert 'executions' not in storage
+            page.get_by_label('被调查服务', exact=True).select_option('orders')
+            with page.expect_response('**/attempts') as next_round:
+                page.get_by_role('button', name='启动新一轮', exact=True).click()
+            assert next_round.value.status == 201
+            assert next_round.value.request.headers['idempotency-key'] != requests[0][0]
+            assert len(client.get(path).json()['attempts']) == 2
+        finally:
+            browser.close()
+
+
+@pytest.mark.parametrize(('starts_at', 'ends_at'), [
+    ('2026-11-01T00:00Z', '2026-11-01T01:00Z'),
+    ('2026-11-01T00:00+08:00', '2026-11-01T01:00+08:00'),
+    ('2026-11-01T00:00+0800', '2026-11-01T01:00+0800'),
+    ('2026-11-01T00:00z', '2026-11-01T01:00z'),
+    ('2026-11-01T00:00:00Z', '2026-11-01T01:00:00Z'),
+    ('2026-11-01T00:00:00,1234567Z', '2026-11-01T01:00:00,1234567Z'),
+    ('2026-11-01T00:00:00.000001Z', '2026-11-01T00:00:00.000002Z'),
+    ('2026-11-01T00:00:00.123456789Z', '2026-11-02T00:00:00.123456999Z'),
+])
+def test_supported_absolute_pending_survives_lost_response_reload(starts_at, ends_at):
+    with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client, sync_playwright() as p:
+        record = client.post('/api/investigations', json={'title': '时间格式恢复-' + uuid4().hex[:8]},
+                             headers={'Idempotency-Key': str(uuid4())}).json()
+        path = '/api/investigations/' + record['id']
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            sent = []
+            def lose(route):
+                sent.append((route.request.headers['idempotency-key'], route.request.post_data))
+                reply = route.fetch()
+                assert reply.status == 201
+                route.abort('failed')
+            page.route('**/attempts', lose, times=1)
+            page.goto(BASE + '/#/investigations/' + record['id'])
+            page.get_by_label('被调查服务', exact=True).select_option('orders')
+            page.get_by_label('范围模式').select_option('absolute')
+            page.get_by_label('日志开始时间').fill(starts_at)
+            page.get_by_label('日志结束时间').fill(ends_at)
+            page.get_by_role('button', name='启动调查', exact=True).click()
+            expect(page.get_by_role('alert')).to_be_visible()
+            page.reload()
+            expect(page.get_by_label('日志开始时间')).to_have_value(starts_at)
+            expect(page.get_by_label('日志结束时间')).to_have_value(ends_at)
+            expect(page.get_by_label('日志开始时间')).to_be_disabled()
+            with page.expect_response('**/attempts') as replay:
+                page.get_by_role('button', name='重试原请求并确认结果').click()
+            assert replay.value.status == 200
+            assert (replay.value.request.headers['idempotency-key'], replay.value.request.post_data) == sent[0]
+            assert len(replay.value.json()['attempts']) == 1
+            assert len(client.get(path).json()['attempts']) == 1
+            assert page.evaluate('(id) => sessionStorage.getItem("logscope:pending-start:" + id)', record['id']) is None
+        finally:
+            browser.close()
+
+
+@pytest.mark.parametrize('catalog', ['failed', 'empty', 'removed'])
+def test_pending_confirmation_does_not_depend_on_current_catalog(catalog):
+    with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client, sync_playwright() as p:
+        record = client.post('/api/investigations', json={'title': '目录独立确认-' + uuid4().hex[:8]},
+                             headers={'Idempotency-Key': str(uuid4())}).json()
+        path = '/api/investigations/' + record['id']
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            sent = []
+            def lose(route):
+                sent.append((route.request.headers['idempotency-key'], route.request.post_data))
+                reply = route.fetch()
+                assert reply.status == 201
+                assert client.post(path + '/attempts/' + reply.json()['attempts'][0]['id'] + '/cancel').status_code == 200
+                route.abort('failed')
+            page.route('**/attempts', lose, times=1)
+            page.goto(BASE + '/#/investigations/' + record['id'])
+            page.get_by_label('被调查服务', exact=True).select_option('orders')
+            page.get_by_role('button', name='启动调查', exact=True).click()
+            expect(page.get_by_role('alert')).to_be_visible()
+            def directory(route):
+                route.fulfill(status=503 if catalog == 'failed' else 200, json={
+                    'items': [{'id': 'query-mixed', 'name': '其他服务'}] if catalog == 'removed' else []})
+            page.route('**/api/services', directory)
+            page.reload()
+            confirm = page.get_by_role('button', name='重试原请求并确认结果')
+            expect(confirm).to_be_enabled()
+            with page.expect_response('**/attempts') as reply:
+                confirm.click()
+            assert reply.value.status == 200
+            assert (reply.value.request.headers['idempotency-key'], reply.value.request.post_data) == sent[0]
+            expect(confirm).to_have_count(0)
+            assert len(client.get(path).json()['attempts']) == 1
+        finally:
+            browser.close()
+
+
+@pytest.mark.parametrize('damage', [
+    'broken-json', 'null', 'empty-body', 'bad-key', 'body-not-string', 'extra-field',
+    'empty-service', 'long-service', 'partial-range', 'naive-range', 'reversed-range',
+    'oversized-range', 'invalid-date', 'read-denied', 'write-denied',
+    'hour-only', 'minute-fraction', 'equal-range', 'submicrosecond-equal',
+    'microsecond-over-24h', 'invalid-offset', 'invalid-hour', 'invalid-leap-day',
+    'zero-year', 'unknown-body-field',
+])
+def test_unrecoverable_pending_blocks_start_but_keeps_details_readable(damage):
+    import json
+    with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client, sync_playwright() as p:
+        record = client.post('/api/investigations', json={'title': '安全阻断-' + uuid4().hex[:8]},
+                             headers={'Idempotency-Key': str(uuid4())}).json()
+        pending = {'key': str(uuid4()), 'body': json.dumps({'service_id': 'orders'})}
+        bodies = {
+            'empty-body': {}, 'empty-service': {'service_id': ''}, 'long-service': {'service_id': 'x' * 81},
+            'partial-range': {'service_id': 'orders', 'starts_at': '2026-11-01T00:00:00Z'},
+            'naive-range': {'service_id': 'orders', 'starts_at': '2026-11-01T00:00:00', 'ends_at': '2026-11-01T01:00:00'},
+            'reversed-range': {'service_id': 'orders', 'starts_at': '2026-11-01T01:00:00Z', 'ends_at': '2026-11-01T00:00:00Z'},
+            'oversized-range': {'service_id': 'orders', 'starts_at': '2026-11-01T00:00:00Z', 'ends_at': '2026-11-03T00:00:00Z'},
+            'invalid-date': {'service_id': 'orders', 'starts_at': 'not-a-date', 'ends_at': '2026-11-01T01:00:00Z'},
+        }
+        invalid_ranges = {
+            'hour-only': ('2026-11-01T00Z', '2026-11-01T01Z'),
+            'minute-fraction': ('2026-11-01T00:00.5Z', '2026-11-01T01:00.5Z'),
+            'equal-range': ('2026-11-01T00:00Z', '2026-11-01T00:00Z'),
+            'submicrosecond-equal': ('2026-11-01T00:00:00.1234561Z', '2026-11-01T00:00:00.1234569Z'),
+            'microsecond-over-24h': ('2026-11-01T00:00:00.000001Z', '2026-11-02T00:00:00.000002Z'),
+            'invalid-offset': ('2026-11-01T00:00+00:60', '2026-11-01T01:00+00:60'),
+            'invalid-hour': ('2026-11-01T24:00Z', '2026-11-02T01:00Z'),
+            'invalid-leap-day': ('2026-02-29T00:00Z', '2026-02-29T01:00Z'),
+            'zero-year': ('0000-11-01T00:00Z', '0000-11-01T01:00Z'),
+        }
+        if damage in invalid_ranges:
+            starts_at, ends_at = invalid_ranges[damage]
+            bodies[damage] = {'service_id': 'orders', 'starts_at': starts_at, 'ends_at': ends_at}
+        bodies['unknown-body-field'] = {'service_id': 'orders', 'unexpected': True}
+        if damage in bodies:
+            assert client.post('/api/investigations/' + record['id'] + '/attempts', json=bodies[damage],
+                               headers={'Idempotency-Key': pending['key']}).status_code == 422
+            pending['body'] = json.dumps(bodies[damage])
+        if damage == 'bad-key':
+            pending['key'] = 'not-a-uuid'
+        if damage == 'body-not-string':
+            pending['body'] = {'service_id': 'orders'}
+        if damage == 'extra-field':
+            pending['unexpected'] = True
+        saved = '{' if damage == 'broken-json' else 'null' if damage == 'null' else json.dumps(pending)
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.add_init_script('''(() => {
+                const damage = %s;
+                if (!damage.endsWith('denied')) sessionStorage.setItem(%s, %s);
+                if (damage === 'read-denied' || damage === 'write-denied') {
+                    Storage.prototype[damage === 'read-denied' ? 'getItem' : 'setItem'] = () => { throw new DOMException('disabled', 'SecurityError') };
+                }
+            })()''' % (json.dumps(damage), json.dumps('logscope:pending-start:' + record['id']), json.dumps(saved)))
+            posts = []
+            page.on('request', lambda request: posts.append(request) if request.method == 'POST' and request.url.endswith('/attempts') else None)
+            page.goto(BASE + '/#/investigations/' + record['id'])
+            expect(page.get_by_role('heading', name=record['title'], exact=True)).to_be_visible()
+            if damage == 'write-denied':
+                page.get_by_label('被调查服务', exact=True).select_option('orders')
+                page.get_by_role('button', name='启动调查', exact=True).click()
+            expect(page.get_by_role('alert')).to_contain_text('原启动身份无法恢复')
+            expect(page.get_by_role('button', name='启动调查', exact=True)).to_be_disabled()
+            page.locator('form').first.evaluate('(form) => form.requestSubmit()')
+            page.get_by_role('button', name='刷新调查状态').click()
+            expect(page.get_by_role('heading', name=record['title'], exact=True)).to_be_visible()
+            expect(page.get_by_role('alert')).to_contain_text('原启动身份无法恢复')
+            assert posts == []
+            assert client.get('/api/investigations/' + record['id']).json()['attempts'] == []
+        finally:
+            browser.close()
+
+
+@pytest.mark.parametrize('cleanup', ['read-denied', 'remove-denied', 'corrupt'])
+def test_late_start_cleanup_failure_stays_with_original_investigation(cleanup):
+    with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client, sync_playwright() as p:
+        records = [client.post('/api/investigations', json={'title': '清理归属-' + uuid4().hex[:8]},
+                              headers={'Idempotency-Key': str(uuid4())}).json() for _ in range(2)]
+        browser = p.chromium.launch(headless=True)
+        held = []
+        try:
+            page = browser.new_page()
+            page.route('**/attempts', lambda route: held.append((route, route.fetch())), times=1)
+            page.goto(BASE + '/#/investigations/' + records[0]['id'])
+            page.get_by_label('被调查服务', exact=True).select_option('orders')
+            page.get_by_role('button', name='启动调查', exact=True).click()
+            page.get_by_role('button', name='刷新调查状态').click()
+            expect(page.get_by_role('button', name='取消调查', exact=True)).to_be_visible()
+            assert held[0][1].status == 201
+            page.evaluate('''({id, cleanup}) => {
+                if (cleanup === 'corrupt') sessionStorage.setItem('logscope:pending-start:' + id, '{');
+                else Storage.prototype[cleanup === 'read-denied' ? 'getItem' : 'removeItem'] = () => { throw new DOMException('disabled', 'SecurityError') };
+            }''', {'id': records[0]['id'], 'cleanup': cleanup})
+            page.evaluate('(id) => location.hash = "/investigations/" + id', records[1]['id'])
+            expect(page.get_by_role('heading', name=records[1]['title'], exact=True)).to_be_visible()
+            alerts = page.get_by_role('alert').count()
+            with page.expect_response('**/attempts'):
+                held[0][0].fulfill(response=held[0][1])
+            page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+            expect(page.get_by_role('heading', name=records[1]['title'], exact=True)).to_be_visible()
+            expect(page.get_by_role('alert')).to_have_count(alerts)
+            expect(page.get_by_role('heading', name='启动结果待确认')).to_have_count(0)
+            page.evaluate('(id) => location.hash = "/investigations/" + id', records[0]['id'])
+            expect(page.get_by_role('heading', name=records[0]['title'], exact=True)).to_be_visible()
+            expect(page.get_by_role('alert')).to_contain_text('原启动身份无法恢复')
+            assert len(client.get('/api/investigations/' + records[0]['id']).json()['attempts']) == 1
+            assert client.get('/api/investigations/' + records[1]['id']).json()['attempts'] == []
+        finally:
+            browser.close()
+
+
+def test_held_accepted_start_refresh_confirms_same_request_before_late_response():
+    with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client, sync_playwright() as p:
+        record = client.post('/api/investigations', json={'title': '暂扣确认-' + uuid4().hex[:8]},
+                             headers={'Idempotency-Key': str(uuid4())}).json()
+        path = '/api/investigations/' + record['id']
+        browser = p.chromium.launch(headless=True)
+        held = []
+        try:
+            page = browser.new_page()
+            def hold(route):
+                held.append((route, route.fetch()))
+            page.route('**/attempts', hold, times=1)
+            page.goto(BASE + '/#/investigations/' + record['id'])
+            page.get_by_label('被调查服务', exact=True).select_option('orders')
+            page.get_by_role('button', name='启动调查', exact=True).click()
+            expect(page.get_by_label('被调查服务', exact=True)).to_be_disabled()
+            page.get_by_role('button', name='刷新调查状态').click()
+            expect(page.get_by_role('heading', name='启动结果待确认')).to_be_visible()
+            assert len(held) == 1 and held[0][1].status == 201
+            assert client.post(path + '/attempts/' + held[0][1].json()['attempts'][0]['id'] + '/cancel').status_code == 200
+            page.get_by_role('button', name='刷新调查状态').click()
+            with page.expect_response('**/attempts') as replay:
+                page.get_by_role('button', name='重试原请求并确认结果').click()
+            assert replay.value.status == 200
+            assert replay.value.request.headers['idempotency-key'] == held[0][0].request.headers['idempotency-key']
+            assert replay.value.request.post_data == held[0][0].request.post_data
+            expect(page.get_by_label('范围模式')).to_have_value('recent')
+            page.get_by_label('被调查服务', exact=True).select_option('query-mixed')
+            with page.expect_response('**/attempts') as new_round:
+                page.get_by_role('button', name='启动新一轮', exact=True).click()
+            assert new_round.value.status == 201
+            with page.expect_response('**/attempts'):
+                held[0][0].fulfill(response=held[0][1])
+            page.evaluate('() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve)))')
+            expect(page.get_by_role('heading', name='第2轮 · 当前轮', exact=True)).to_be_visible()
+            assert len(client.get(path).json()['attempts']) == 2
+        finally:
+            browser.close()
+
+
+def test_cancel_reopen_browses_readonly_round_history(evidence_executor):
+    with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client:
+        pending = client.post('/api/investigations', json={'title': '逐轮历史-' + uuid4().hex[:8]},
+            headers={'Idempotency-Key': str(uuid4())}).json()
+        path = '/api/investigations/' + pending['id']
+        body = {'service_id': 'orders', 'starts_at': '2026-11-01T00:00:00Z', 'ends_at': '2026-11-01T01:00:00Z'}
+        first = client.post(path + '/attempts', json=body, headers={'Idempotency-Key': str(uuid4())}).json()['attempts'][0]
+        base = f'/api/executor/investigations/{pending["id"]}/attempts/{first["id"]}/executions'
+        identity = client.get(base, headers=evidence_executor).json()['executions'][0]['id']
+        evidence = {'format': 'controlled-event-v1', 'source_id': 'controlled-orders',
+            'occurred_at': '2026-11-01T00:15:00Z', 'query': {'starts_at': body['starts_at'], 'ends_at': body['ends_at'], 'fields': {}},
+            'record': {'event': 'request_failed', 'error_code': 'ETIMEDOUT', 'fields': {}}, 'locator': None}
+        saved = client.post(base + '/' + identity + '/evidence', json=evidence, headers=evidence_executor)
+        assert saved.status_code == 201
+        proposal = {'format': 'controlled-analysis-v1', 'kind': 'undetermined', 'mechanism': None,
+            'evidence_ids': [saved.json()['id']], 'missing': ['causal_trace'], 'expected_version': 0, 'finish': False}
+        assert client.post(base + '/' + identity + '/conclusions', json=proposal,
+            headers={**evidence_executor, 'Idempotency-Key': str(uuid4())}).status_code == 201
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            try:
+                page = browser.new_page()
+                page.goto(BASE + '/#/investigations/' + pending['id'])
+                detail = page.get_by_role('region', name='调查详情')
+                detail.get_by_role('button', name='取消调查', exact=True).click()
+                expect(detail).to_contain_text('已取消')
+                expect(detail.get_by_role('button', name='启动新一轮', exact=True)).to_be_visible()
+                page.get_by_label('被调查服务', exact=True).select_option('query-mixed')
+                detail.get_by_role('button', name='启动新一轮', exact=True).click()
+                expect(detail.get_by_role('heading', name='第2轮 · 当前轮', exact=True)).to_be_visible()
+                record = client.get(path).json()
+                assert len(record['attempts']) == 2
+                assert record['attempts'][0]['status'] == '已取消'
+                assert record['attempts'][1]['service_id'] == 'query-mixed'
+                assert record['evidence_count'] == 0
+                history = detail.get_by_role('region', name='第1轮历史')
+                expect(history).to_contain_text('orders')
+                expect(history).to_contain_text('本轮证据条数：1')
+                expect(history.get_by_role('article', name='结论版本')).to_have_count(1)
+                history.get_by_role('link', name='查看证据 ' + saved.json()['id']).click()
+                assert page.url.endswith('/#/investigations/' + pending['id'])
+                expect(history.locator('[id="evidence-' + first['id'] + '-' + saved.json()['id'] + '"]')).to_be_in_viewport()
+                expect(detail.get_by_role('region', name='第2轮当前')).not_to_contain_text('ETIMEDOUT')
+                page.reload()
+                expect(detail.get_by_role('heading', name='第2轮 · 当前轮', exact=True)).to_be_visible()
+                expect(detail.get_by_role('region', name='第1轮历史')).to_contain_text('本轮证据条数：1')
+                assert client.get(path).json() == record
+                page.get_by_role('button', name='返回列表').click()
+                expect(page.get_by_role('region', name='调查详情')).to_have_count(0)
+            finally:
+                browser.close()
+
+
 def test_deadline_ui_distinguishes_timeout_wait_from_failure_and_navigation(evidence_executor):
     from concurrent.futures import ThreadPoolExecutor
     import time
@@ -332,7 +729,7 @@ def test_default_start_lost_response_replays_one_fixed_attempt():
         page.get_by_role('button', name='启动调查', exact=True).click()
         expect(page.get_by_role('alert')).to_be_visible()
         with page.expect_response(lambda r: r.url.endswith('/attempts') and r.request.method == 'POST') as response:
-            page.get_by_role('button', name='启动调查', exact=True).click()
+            page.get_by_role('button', name='重试原请求并确认结果', exact=True).click()
         assert response.value.status == 200
         assert response.value.json() == saved[0]
         attempt = saved[0]['attempts'][0]
@@ -392,7 +789,7 @@ def test_late_start_response_cannot_replace_new_route_or_clear_its_inflight(late
         expect(page.get_by_role('alert')).to_be_visible()
         page.unroute('**/attempts', hold)
         with page.expect_response(lambda r: r.url.endswith(f'/investigations/{b["id"]}/attempts')) as replay:
-            page.get_by_role('button', name='启动调查', exact=True).click()
+            page.get_by_role('button', name='重试原请求并确认结果', exact=True).click()
         assert replay.value.status == 200
         assert replay.value.json() == held[1][1].json()
         expect(page.get_by_role('region', name='调查详情')).to_contain_text('调查中')
@@ -559,7 +956,7 @@ def test_conclusions_history_completed_result_and_evidence_navigation(evidence_e
                 expect(detail).to_contain_text('关键矛盾')
                 expect(detail).to_contain_text('非科学证明')
             page.get_by_role('link', name='查看证据 ' + saved['id']).first.click()
-            evidence_card = page.locator('[id="evidence-' + saved['id'] + '"]')
+            evidence_card = page.locator('[id="evidence-' + attempt + '-' + saved['id'] + '"]')
             expect(evidence_card).to_be_in_viewport()
             expect(evidence_card).to_contain_text('ETIMEDOUT')
             expect(page.get_by_role('button', name='强制确认根因')).to_have_count(0)
