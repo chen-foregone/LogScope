@@ -69,7 +69,7 @@ def conclusion_router(engine, credential, clock):
                 from app.deadlines import enforce_deadline, finalize_deadline
                 enforce_deadline(connection, row, clock())
                 pending = connection.begin_nested()
-                if row['cancel_requested_at'] is not None:
+                if row['cancel_requested_at'] is not None or row['lost_requested_at'] is not None:
                     raise HTTPException(403, '本轮已请求停止，拒绝旧执行及重放产物')
                 replay = connection.execute(select(conclusions).where(conclusions.c.attempt_id == attempt_id,
                     conclusions.c.request_key == idempotency_key)).mappings().first()

@@ -10,7 +10,7 @@ from app.investigations import investigations
 def arbitrate_deadline(connection, row, now):
     """调用方已持调查及轮次锁；已取得的停止归属与终态不改。"""
     if (row['status'] != '调查中' or row['cancel_requested_at'] is not None
-            or row['timeout_requested_at'] is not None or now < row['deadline_at']):
+            or row['timeout_requested_at'] is not None or row['lost_requested_at'] is not None or now < row['deadline_at']):
         return row['timeout_requested_at'] is not None
     connection.execute(update(attempts).where(attempts.c.id == row['id']).values(timeout_requested_at=now))
     connection.execute(update(executions).where(executions.c.attempt_id == row['id']).values(valid=False))
@@ -24,6 +24,8 @@ class DeadlineSchedule:
 
 
 def coordinate_deadlines(engine, clock):
+    from app.interruption import coordinate_interruptions
+    coordinate_interruptions(engine, clock)
     from app.cancellation import confirm_stop
     with engine.connect() as connection:
         candidates = connection.execute(select(attempts.c.id, attempts.c.investigation_id).where(
@@ -70,7 +72,7 @@ def finalize_deadline(connection, row, clock, pending, *, reject=True):
     # 持锁、业务 SQL 完成后的最后裁决；COMMIT 传输/落盘延迟不属于可原子采样范围。
     now = clock()
     if (row['status'] == '调查中' and row['cancel_requested_at'] is None
-            and now >= row['deadline_at']):
+            and row['lost_requested_at'] is None and now >= row['deadline_at']):
         pending.rollback()
         if reject:
             enforce_deadline(connection, row, now)

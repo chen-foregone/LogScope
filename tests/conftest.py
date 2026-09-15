@@ -92,7 +92,11 @@ uvicorn.run(create_app(clock=clock, query_sources={'ui-limited': Limited(), 'ui-
                     pass
                 assert time.monotonic() < deadline, 'UI真实API/Vite未在期限内就绪'
         print('UI隔离schema: ' + schema)
-        yield {'Authorization': 'Bearer ' + credential}
+        class ExecutorHeaders(dict):
+            pass
+        headers = ExecutorHeaders(Authorization='Bearer ' + credential)
+        headers.database_url = env['DATABASE_URL']
+        yield headers
     finally:
         for process in reversed(processes):
             process.terminate()

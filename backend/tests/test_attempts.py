@@ -461,16 +461,10 @@ def test_started_attempt_survives_real_process_restart(database_url, tmp_path):
         saved = client.post(endpoint, json=payload, headers=auth)
         assert saved.status_code == 201
         record = client.get(path).json()
-    with server() as client:
-        assert client.get(path).json() == record
-        replay = client.post(path + '/attempts', json={'service_id': 'orders'}, headers=headers)
-        assert replay.status_code == 200
-        assert replay.json() == record
-        assert client.get(controlled, headers=auth).json() == accepted
+        # 10不再允许执行进程退出后续跑旧轮；历史持久性用正常结束材料验证。
         repeated = client.post(endpoint, json=payload, headers=auth)
         assert repeated.status_code == 200
         assert repeated.json() == saved.json()
-        assert client.get(path).json() == record
         assert client.get(path).json()['evidence_count'] == 1
         from test_conclusions import proposal
         conclusion_endpoint = endpoint.removesuffix('/evidence') + '/conclusions'

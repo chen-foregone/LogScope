@@ -23,6 +23,8 @@ attempts = Table(
     Column("evidence_unavailable", Boolean),
     Column("deadline_at", DateTime(timezone=True)),
     Column("timeout_requested_at", DateTime(timezone=True)),
+    Column("lost_requested_at", DateTime(timezone=True)),
+    Column("interruption_confirmation", JSON),
     Column("cancel_requested_at", DateTime(timezone=True)),
     Column("stop_confirmed_at", DateTime(timezone=True)), Column("stop_confirmation", String(64)),
     Column("ended_at", DateTime(timezone=True)), Column("result", String(24)), Column("end_reason", String(32)),
@@ -32,6 +34,7 @@ executions = Table(
     Column("id", Uuid, primary_key=True),
     Column("attempt_id", Uuid, ForeignKey("attempts.id"), unique=True),
     Column("valid", Boolean), Column("stop_protocol", String(40)),
+    Column("process_identity", JSON),
 )
 
 
@@ -81,7 +84,8 @@ def attempt_views(connection, investigation_id):
                'queries': queried, 'query_coverage': query_coverage(queried, coverage_aliases(connection, row['id'], row['source_ids'])),
                'cancel_requested_at': row['cancel_requested_at'], 'stop_confirmed_at': row['stop_confirmed_at'],
                'stop_confirmation': row['stop_confirmation'], 'timeout_requested_at': row['timeout_requested_at'],
-               'execution_phase': 'stopped' if row['status'] != '调查中' else ('stopping' if row['cancel_requested_at'] else 'timeout_stopping' if row['timeout_requested_at'] else 'running')})
+               'lost_requested_at': row['lost_requested_at'], 'interruption_confirmation': row['interruption_confirmation'],
+               'execution_phase': 'stopped' if row['status'] != '调查中' else ('confirming_execution' if row['lost_requested_at'] else 'stopping' if row['cancel_requested_at'] else 'timeout_stopping' if row['timeout_requested_at'] else 'running')})
     for view in views:
         for key, value in view.items():
             if isinstance(value, datetime):
@@ -97,7 +101,9 @@ class ControlledExecutionAdapter:
     """仅持久接纳，不启动线程、不接日志或Agent；接纳与业务共享提交/回滚。"""
 
     def accept(self, connection, attempt_id):
+        from app.processes import current_process
         connection.execute(insert(executions).values(id=uuid4(), attempt_id=attempt_id, valid=True,
+            process_identity=current_process() if type(self) is ControlledExecutionAdapter else None,
             stop_protocol='controlled_queries_v1' if type(self) is ControlledExecutionAdapter else None))
 
 

@@ -10,6 +10,83 @@ from playwright.sync_api import sync_playwright, expect
 BASE = os.environ.get("UI_BASE_URL", "http://127.0.0.1:5173")
 
 
+def test_lost_execution_ui_keeps_waiting_and_refresh_is_read_only(evidence_executor):
+    with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client, sync_playwright() as p:
+        record = client.post('/api/investigations', json={'title': '失联确认-' + uuid4().hex[:8]},
+                             headers={'Idempotency-Key': str(uuid4())}).json()
+        path = '/api/investigations/' + record['id']
+        started = client.post(path + '/attempts', json={'service_id': 'orders'},
+                              headers={'Idempotency-Key': str(uuid4())}).json()
+        attempt = started['attempts'][0]
+        endpoint = f'/api/executor/investigations/{record["id"]}/attempts/{attempt["id"]}/executions'
+        execution = client.get(endpoint, headers=evidence_executor).json()['executions'][0]['id']
+        waiting = client.post(endpoint + '/' + execution + '/lost', headers=evidence_executor).json()
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.goto(BASE + '/#/investigations/' + record['id'])
+            expect(page.get_by_role('status').filter(has_text='正在确认执行状态')).to_contain_text('正在确认执行状态')
+            expect(page.get_by_role('button', name='取消调查', exact=True)).to_be_disabled()
+            expect(page.get_by_role('button', name='启动新一轮', exact=True)).to_have_count(0)
+            page.reload()
+            expect(page.get_by_role('status').filter(has_text='正在确认执行状态')).to_contain_text('不能启动新轮')
+            assert client.get(path).json() == waiting
+        finally:
+            browser.close()
+
+
+def test_interruption_failure_reason_is_visible_in_round_history(evidence_executor):
+    import subprocess
+    import socket
+    import sys
+    import time
+    with socket.socket() as listener:
+        listener.bind(('127.0.0.1', 0))
+        port = listener.getsockname()[1]
+    process = subprocess.Popen([sys.executable, '-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', str(port)],
+        env={**os.environ, 'DATABASE_URL': evidence_executor.database_url,
+             'SERVICES_FILE': 'backend/services.example.json'}, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    try:
+        with httpx.Client(base_url=f'http://127.0.0.1:{port}', trust_env=False, timeout=10) as owner:
+            limit = time.monotonic() + 20
+            while True:
+                assert process.poll() is None
+                try:
+                    if owner.get('/api/health').status_code == 200:
+                        break
+                except httpx.TransportError:
+                    pass
+                assert time.monotonic() < limit
+            record = owner.post('/api/investigations', json={'title': '中断历史-' + uuid4().hex[:8]},
+                                headers={'Idempotency-Key': str(uuid4())}).json()
+            path = '/api/investigations/' + record['id']
+            assert owner.post(path + '/attempts', json={'service_id': 'orders'},
+                              headers={'Idempotency-Key': str(uuid4())}).status_code == 201
+        process.terminate()
+        process.wait(timeout=15)
+        assert process.poll() is not None
+        with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client, sync_playwright() as p:
+            limit = time.monotonic() + 10
+            while client.get(path).json()['status'] == '调查中':
+                assert time.monotonic() < limit
+            browser = p.chromium.launch(headless=True)
+            try:
+                page = browser.new_page()
+                page.goto(BASE + '/#/investigations/' + record['id'])
+                expect(page.get_by_role('region', name='调查详情')).to_contain_text('服务中断，已确认旧执行退出并隔离写入')
+                page.get_by_label('被调查服务', exact=True).select_option('orders')
+                page.get_by_role('button', name='启动新一轮', exact=True).click()
+                expect(page.get_by_role('region', name='调查详情')).to_contain_text('服务中断，已确认旧执行退出并隔离写入')
+                page.reload()
+                expect(page.get_by_role('region', name='调查详情')).to_contain_text('服务中断，已确认旧执行退出并隔离写入')
+            finally:
+                browser.close()
+    finally:
+        if process.poll() is None:
+            process.terminate()
+        process.wait(timeout=15)
+
+
 def test_each_confirmed_round_resets_absolute_form_to_recent_hour():
     with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client, sync_playwright() as p:
         record = client.post('/api/investigations', json={'title': '每轮默认-' + uuid4().hex[:8]},

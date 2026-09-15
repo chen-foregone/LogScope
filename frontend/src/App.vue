@@ -354,7 +354,8 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
             <section v-for="attempt in selected.attempts" :id="`attempt-${attempt.id}`" :key="attempt.id" :aria-label="`第${attempt.attempt_number}轮${attempt.id === selected.attempts.at(-1)?.id ? '当前' : '历史'}`">
               <h3>第{{ attempt.attempt_number }}轮 · {{ attempt.id === selected.attempts.at(-1)?.id ? '当前轮' : '历史（只读）' }}</h3>
               <p>服务：{{ attempt.service_id }} · {{ attempt.status }}</p>
-              <el-button v-if="attempt.status === '调查中'" :disabled="canceling === attempt.id || attempt.execution_phase === 'stopping' || attempt.execution_phase === 'timeout_stopping'" @click="cancelInvestigation(attempt.id)">取消调查</el-button>
+              <el-button v-if="attempt.status === '调查中'" :disabled="canceling === attempt.id || attempt.execution_phase === 'stopping' || attempt.execution_phase === 'timeout_stopping' || attempt.execution_phase === 'confirming_execution'" @click="cancelInvestigation(attempt.id)">取消调查</el-button>
+              <p v-if="attempt.execution_phase === 'confirming_execution'" role="status">正在确认执行状态：尚未可靠确认旧执行退出，仍为调查中、继续占用运行名额，不能启动新轮。已隔离旧执行写入，请刷新调查状态查看确认结果。</p>
               <p v-if="attempt.execution_phase === 'stopping'" role="status">正在停止：尚未确认执行终止，仍为调查中、继续占用运行名额，不能启动新轮。请刷新调查状态查看确认结果。</p>
               <p>单轮截止时间：{{ displayTime(attempt.deadline_at) }}；启动起10分钟，查询、重试和等待共享预算。</p>
               <p v-if="attempt.execution_phase === 'timeout_stopping'" role="status">总时限已到，等待执行退出确认：仍为调查中、继续占用运行名额，不能启动新轮。请刷新调查状态查看确认结果。</p>
@@ -362,7 +363,7 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
               <p v-if="attempt.stop_confirmed_at && attempt.timeout_requested_at">总时限退出已确认，已保存材料仍保留。</p>
               <p>固定日志范围：{{ displayTime(attempt.starts_at) }} — {{ displayTime(attempt.ends_at) }}</p>
               <p>可控执行适配器：支持受控异步查询及结构化证据；未接真实日志或 Agent，不代表真实来源验收完成。</p>
-              <p v-if="attempt.ended_at">结束时间：{{ displayTime(attempt.ended_at) }} · {{ attempt.end_reason === 'user_canceled' ? '用户主动停止，已确认执行终止' : attempt.end_reason === 'necessary_sources_unavailable' ? '必要来源不可用，无法继续' : attempt.end_reason === 'attempt_deadline_exceeded' ? '单轮10分钟总时限已到' : '正常排查结束' }}</p>
+              <p v-if="attempt.ended_at">结束时间：{{ displayTime(attempt.ended_at) }} · {{ attempt.end_reason === 'user_canceled' ? '用户主动停止，已确认执行终止' : attempt.end_reason === 'necessary_sources_unavailable' ? '必要来源不可用，无法继续' : attempt.end_reason === 'attempt_deadline_exceeded' ? '单轮10分钟总时限已到' : attempt.end_reason === 'service_interrupted' ? '服务中断，已确认旧执行退出并隔离写入' : '正常排查结束' }}</p>
               <p>调查结果：{{ attempt.result || (attempt.status === '已取消' ? '主动停止，未完成排查' : attempt.status === '失败' ? '技术失败，未完成排查' : '尚未结束') }}；已完成不代表已确认根因。</p>
               <h4>来源查询与覆盖</h4>
               <p role="status">{{ attempt.query_coverage.notice }}</p>

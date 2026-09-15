@@ -25,7 +25,26 @@ queries = Table('controlled_queries', metadata,
     Column('id', Uuid, primary_key=True), Column('attempt_id', Uuid, ForeignKey('attempts.id')),
     Column('execution_id', Uuid, ForeignKey('controlled_executions.id')),
     Column('request_key', Uuid), Column('active', Boolean), Column('created_at', DateTime(timezone=True)),
-    Column('material', JSON))
+    Column('material', JSON), Column('process_identity', JSON))
+
+
+def release_source_gates(connection, query_id, source_ids, states):
+    states_by_key = {hashlib.sha256(source_id.encode()).hexdigest(): state
+                     for source_id, state in zip(source_ids, states)}
+    gates = connection.execute(select(source_gates).where(source_gates.c.query_id == query_id)
+        .order_by(source_gates.c.source_key).with_for_update()).mappings().all()
+    for gate in gates:
+        state = states_by_key.get(gate['source_key'], {})
+        values = {'query_id': None}
+        if state.get('reason') == 'rate_limited':
+            retry = state.get('retry_not_before')
+            retry_at = datetime.fromisoformat(retry) if retry else None
+            if gate['blocked']:
+                retry_at = (max(gate['retry_at'], retry_at)
+                            if gate['retry_at'] is not None and retry_at is not None else None)
+            values.update(blocked=True, retry_at=retry_at)
+        connection.execute(update(source_gates).where(source_gates.c.source_key == gate['source_key'],
+            source_gates.c.query_id == query_id).values(**values))
 
 
 def query_views(connection, attempt_id):
@@ -172,8 +191,9 @@ def query_router(engine, credential, sources, clock, schedule):
                     raise HTTPException(409, {'code': 'sources_blocked',
                         'notice': '所有来源在途或受限，未发起查询；有恢复时间的来源到期后可试，其余须等待退出或由来源确认恢复。',
                         'sources': result['sources']})
+                from app.processes import current_process
                 connection.execute(insert(queries).values(id=identity, attempt_id=attempt_id, execution_id=execution_id,
-                    request_key=idempotency_key, active=True, created_at=clock(), material=result))
+                    process_identity=current_process(), request_key=idempotency_key, active=True, created_at=clock(), material=result))
                 connection.execute(update(investigations).where(investigations.c.id == investigation_id).values(updated_at=clock()))
                 finalize_deadline(connection, row, clock, pending)
             total_end = asyncio.get_running_loop().time() + max(0, (row['deadline_at'] - clock()).total_seconds())
@@ -189,7 +209,7 @@ def query_router(engine, credential, sources, clock, schedule):
                     if asyncio.get_running_loop().time() >= total_end:
                         observed_now = max(observed_now, current['deadline_at'])
                     timed_out = arbitrate_deadline(connection, current, observed_now)
-                    return current['cancel_requested_at'] is not None or timed_out
+                    return current['cancel_requested_at'] is not None or current['lost_requested_at'] is not None or timed_out
 
             async def controlled(operation):
                 canceled = stop_requested()
@@ -278,6 +298,7 @@ def query_router(engine, credential, sources, clock, schedule):
                     if number < 3 and failure.reason in {'network', 'timeout'}:
                         delay = (2, 5)[number - 1]
                     elif failure.reason == 'rate_limited':
+                        state['retry_not_before'] = None
                         requested = failure.retry_after
                         if type(requested) in (int, float) and math.isfinite(requested) and requested > 0:
                             # 只等待明确来源值；过长限制留给人工恢复，不提前重试。
@@ -312,13 +333,7 @@ def query_router(engine, credential, sources, clock, schedule):
                 if valid is None:
                     raise HTTPException(403, '执行身份或轮次无效')
                 pending = connection.begin_nested()
-                for source_id, state in sorted(zip(row['source_ids'], result['sources']),
-                                               key=lambda pair: source_keys[pair[0]]):
-                    retry_at = state.get('retry_not_before')
-                    connection.execute(update(source_gates).where(source_gates.c.source_key == source_keys[source_id],
-                        source_gates.c.query_id == identity).values(query_id=None,
-                        blocked=state['reason'] == 'rate_limited',
-                        retry_at=datetime.fromisoformat(retry_at) if retry_at else None))
+                release_source_gates(connection, identity, row['source_ids'], result['sources'])
                 connection.execute(update(queries).where(queries.c.id == identity).values(active=False, material=result))
                 now = clock().astimezone(timezone.utc)
                 values = {'updated_at': now}
@@ -339,19 +354,12 @@ def query_router(engine, credential, sources, clock, schedule):
                             investigations.c.id == investigation_id).with_for_update()).first()
                         stopping = connection.execute(select(attempts).where(
                             attempts.c.id == attempt_id).with_for_update()).mappings().first()
-                        canceled = stopping and (stopping['cancel_requested_at'] or stopping['timeout_requested_at'])
+                        canceled = stopping and (stopping['cancel_requested_at'] or stopping['timeout_requested_at'] or stopping['lost_requested_at'])
                         owned = connection.execute(select(queries.c.id).where(queries.c.id == identity,
                             queries.c.active.is_(True))).first()
                         if canceled is not None and owned:
-                            result['status'] = 'canceled' if stopping['cancel_requested_at'] else 'timed_out'
-                            for source_id, state in sorted(zip(row['source_ids'], result['sources']),
-                                                           key=lambda pair: source_keys[pair[0]]):
-                                retry_at = state.get('retry_not_before')
-                                connection.execute(update(source_gates).where(
-                                    source_gates.c.source_key == source_keys[source_id],
-                                    source_gates.c.query_id == identity).values(query_id=None,
-                                        blocked=state['reason'] == 'rate_limited',
-                                        retry_at=datetime.fromisoformat(retry_at) if retry_at else None))
+                            result['status'] = 'canceled' if stopping['cancel_requested_at'] else 'timed_out' if stopping['timeout_requested_at'] else 'interrupted'
+                            release_source_gates(connection, identity, row['source_ids'], result['sources'])
                             for state in result['sources']:
                                 if state['state'] not in {'skipped', 'unavailable'}:
                                     state.update(state='canceled', reason=None)

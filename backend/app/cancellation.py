@@ -11,6 +11,8 @@ from app.investigations import investigations, InvestigationView
 def confirm_stop(connection, investigation_id, attempt_id, now):
     from app.queries import queries
     row = connection.execute(select(attempts).where(attempts.c.id == attempt_id)).mappings().one()
+    if row['lost_requested_at'] is not None:
+        return
     if row['status'] != '调查中' or (row['cancel_requested_at'] is None and row['timeout_requested_at'] is None):
         return
     if connection.execute(select(queries.c.id).where(queries.c.attempt_id == attempt_id,
@@ -49,7 +51,7 @@ def cancellation_router(engine, clock):
                 from app.deadlines import arbitrate_deadline, finalize_deadline
                 timed_out = arbitrate_deadline(connection, row, clock())
                 pending = connection.begin_nested()
-                if row['status'] == '调查中' and row['cancel_requested_at'] is None and not timed_out:
+                if row['status'] == '调查中' and row['cancel_requested_at'] is None and row['lost_requested_at'] is None and not timed_out:
                     now = clock()
                     connection.execute(update(attempts).where(attempts.c.id == attempt_id).values(cancel_requested_at=now))
                     connection.execute(update(executions).where(executions.c.attempt_id == attempt_id).values(valid=False))
