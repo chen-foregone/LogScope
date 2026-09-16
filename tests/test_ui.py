@@ -10,6 +10,37 @@ from playwright.sync_api import sync_playwright, expect
 BASE = os.environ.get("UI_BASE_URL", "http://127.0.0.1:5173")
 
 
+def test_capacity_ui_explains_no_start_and_only_manual_retry(evidence_executor):
+    with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client, sync_playwright() as p:
+        records = [client.post('/api/investigations', json={'title': '容量-' + uuid4().hex[:8]},
+                              headers={'Idempotency-Key': str(uuid4())}).json() for _ in range(4)]
+        running = [client.post(f'/api/investigations/{record["id"]}/attempts', json={'service_id': 'orders'},
+                               headers={'Idempotency-Key': str(uuid4())}).json() for record in records[:3]]
+        target = records[3]
+        path = f'/api/investigations/{target["id"]}'
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.goto(BASE + '/#' + path.removeprefix('/api'))
+            expect(page.get_by_role('status').filter(has_text='实例最多同时运行3个调查')).to_contain_text('满额不排队')
+            page.get_by_label('被调查服务', exact=True).select_option('orders')
+            page.get_by_role('button', name='启动调查', exact=True).click()
+            expect(page.get_by_role('alert')).to_contain_text('尚未启动，不排队，请稍后手动重试')
+            expect(page.get_by_label('被调查服务', exact=True)).to_be_enabled()
+            assert client.get(path).json() == target
+            first = running[0]
+            assert client.post(f'/api/investigations/{first["id"]}/attempts/{first["attempts"][0]["id"]}/cancel').json()['status'] == '已取消'
+            page.reload()
+            expect(page.get_by_role('button', name='启动调查', exact=True)).to_be_visible()
+            assert client.get(path).json() == target
+            page.get_by_label('被调查服务', exact=True).select_option('orders')
+            page.get_by_role('button', name='启动调查', exact=True).click()
+            expect(page.get_by_role('button', name='取消调查', exact=True)).to_be_visible()
+            assert len(client.get(path).json()['attempts']) == 1
+        finally:
+            browser.close()
+
+
 def test_lost_execution_ui_keeps_waiting_and_refresh_is_read_only(evidence_executor):
     with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client, sync_playwright() as p:
         record = client.post('/api/investigations', json={'title': '失联确认-' + uuid4().hex[:8]},
@@ -525,7 +556,7 @@ def test_deadline_ui_distinguishes_timeout_wait_from_failure_and_navigation(evid
 
 
 def test_cancel_navigation_isolates_pending_errors_and_old_finally():
-    with httpx.Client(base_url=BASE, trust_env=False) as client:
+    with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client:
         records = []
         for label in ('A', 'B'):
             record = client.post('/api/investigations', json={'title': '取消归属-' + label + uuid4().hex[:8]},
@@ -610,7 +641,7 @@ def test_cancel_ui_distinguishes_stopping_from_confirmed_and_refreshes(evidence_
 
 
 def test_query_failure_is_persistent_safe_and_not_completed(evidence_executor):
-    with httpx.Client(base_url=BASE, trust_env=False) as client:
+    with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client:
         record = client.post('/api/investigations', json={'title': 'UI查询故障-' + uuid4().hex[:8]},
             headers={'Idempotency-Key': str(uuid4())}).json()
         path = '/api/investigations/' + record['id']
@@ -676,7 +707,7 @@ def test_mixed_query_coverage_renders_skipped_source_and_survives_refresh(eviden
 
 
 def test_unqueried_sources_stay_missing_before_and_after_normal_finish(evidence_executor):
-    with httpx.Client(base_url=BASE, trust_env=False) as client:
+    with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client:
         record = client.post('/api/investigations', json={'title': 'UI未扫描-' + uuid4().hex[:8]},
             headers={'Idempotency-Key': str(uuid4())}).json()
         path = '/api/investigations/' + record['id']
@@ -817,7 +848,7 @@ def test_default_start_lost_response_replays_one_fixed_attempt():
 
 @pytest.mark.parametrize('late_status', [201, 422])
 def test_late_start_response_cannot_replace_new_route_or_clear_its_inflight(late_status):
-    with httpx.Client(base_url=BASE) as client:
+    with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client:
         records = []
         for label in ('A', 'B'):
             reply = client.post('/api/investigations', json={'title': f'延迟导航{label}-{uuid4().hex[:8]}'},
@@ -875,7 +906,7 @@ def test_late_start_response_cannot_replace_new_route_or_clear_its_inflight(late
 
 
 def test_late_start_failure_after_return_to_same_route_does_not_block_retry():
-    with httpx.Client(base_url=BASE) as client:
+    with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client:
         reply = client.post('/api/investigations', json={'title': f'原路重试-{uuid4().hex[:8]}'},
                             headers={'Idempotency-Key': str(uuid4())})
         assert reply.status_code == 201
@@ -916,7 +947,7 @@ def test_late_start_failure_after_return_to_same_route_does_not_block_retry():
 
 def test_evidence_cards_refresh_without_raw_sensitive_content(evidence_executor):
     marker = uuid4().hex
-    with httpx.Client(base_url=BASE, trust_env=False) as client:
+    with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client:
         pending = client.post('/api/investigations', json={'title': 'UI证据-' + uuid4().hex[:8]},
                               headers={'Idempotency-Key': str(uuid4())}).json()
         path = '/api/investigations/' + pending['id']
@@ -983,7 +1014,7 @@ def test_evidence_cards_refresh_without_raw_sensitive_content(evidence_executor)
 
 @pytest.mark.parametrize('confirmed', [False, True])
 def test_conclusions_history_completed_result_and_evidence_navigation(evidence_executor, confirmed):
-    with httpx.Client(base_url=BASE, trust_env=False) as client:
+    with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client:
         pending = client.post('/api/investigations', json={'title': 'UI结论-' + uuid4().hex[:8]},
                               headers={'Idempotency-Key': str(uuid4())}).json()
         path = '/api/investigations/' + pending['id']

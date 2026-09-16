@@ -7,9 +7,11 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Header, HTTPException, Response
 from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, model_validator
-from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String, Table, Text, Uuid, insert, select, update
+from sqlalchemy import Boolean, Column, DateTime, ForeignKey, Integer, JSON, String, Table, Text, Uuid, func, insert, select, update
 
 from app.investigations import InvestigationView, investigations, metadata, representation
+
+instance_admission = Table('instance_admission', metadata, Column('id', Integer, primary_key=True))
 
 attempts = Table(
     "attempts", metadata,
@@ -110,7 +112,7 @@ class ControlledExecutionAdapter:
 @contextmanager
 def start_transaction(engine):
     try:
-        with engine.begin() as connection:
+        with engine.connect().execution_options(isolation_level='READ COMMITTED') as connection, connection.begin():
             yield connection
     except SQLAlchemyError:
         raise HTTPException(503, "数据库启动结果未确认；请使用同一请求标识重试以读取真实结果") from None
@@ -145,6 +147,12 @@ def attempt_router(engine, services, adapter, clock):
             service = services.get(payload.service_id)
             if service is None:
                 raise HTTPException(422, "服务未配置或无效，尚未启动")
+            # 调查→接纳锁；计数独立SQL在锁等待后取得新快照，不维护可漂移的人工计数。
+            connection.execute(select(instance_admission.c.id).where(instance_admission.c.id == 1)
+                               .with_for_update()).scalar_one()
+            if connection.execute(select(func.count()).select_from(attempts).where(
+                    attempts.c.status == '调查中')).scalar_one() >= 3:
+                raise HTTPException(409, '实例已满额（最多3个调查）；尚未启动，不排队，请稍后手动重试')
             now = clock()
             attempt_id = uuid4()
             previous_number = connection.execute(select(attempts.c.attempt_number).where(

@@ -417,6 +417,7 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
             <h3 v-else-if="selected.attempts.length">手动发起新一轮</h3>
             <p v-if="pendingStart" role="status">原请求的服务和范围已锁定。刷新或看到终态不代表已确认本次启动；请重试原请求并读取当前结果，不会额外创建一轮。确认成功后才可显式发起下一轮。待确认信息仅保存在当前标签页会话，请勿清除站点存储或关闭标签页。</p>
             <p v-if="selected.attempts.length">历史轮次只读保留；新轮不自动继承历史证据、结论或查询覆盖，无累计次数上限。</p>
+            <p role="status">实例最多同时运行3个调查，正在停止及正在确认执行状态仍占名额；满额不排队，未启动时请稍后手动重试。</p>
             <form @submit.prevent="startInvestigation">
               <p><label for="start-service">被调查服务</label> <select id="start-service" v-model="serviceId" :disabled="starting || !!pendingStart || startBlocked"><option value="">请选择已配置服务</option><option v-for="service in services" :key="service.id" :value="service.id">{{ service.name }}</option></select></p>
               <p v-if="!services.length">尚无可选服务，请由维护者配置后端服务目录。</p>

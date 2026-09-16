@@ -498,6 +498,252 @@ def test_started_attempt_survives_real_process_restart(database_url, tmp_path):
         assert client.get(path).json() == canceled
 
 
+def test_instance_capacity_rejects_without_start_or_timestamp_and_requires_manual_retry(database_url, tmp_path):
+    with configured_client(database_url, tmp_path) as client:
+        records = [create(client)[0] for _ in range(5)]
+        def start(record, key=None):
+            return client.post(f'/api/investigations/{record["id"]}/attempts',
+                               json={'service_id': 'orders'}, headers={'Idempotency-Key': key or str(uuid4())})
+        keys = [str(uuid4()) for _ in range(3)]
+        running = [start(record, key).json() for record, key in zip(records, keys)]
+        rejected_key = str(uuid4())
+        rejected = start(records[3], rejected_key)
+        assert rejected.status_code == 409, rejected.text
+        assert '尚未启动' in rejected.json()['detail']
+        assert '稍后' in rejected.json()['detail']
+        assert '不排队' in rejected.json()['detail']
+        assert client.get(f'/api/investigations/{records[3]["id"]}').json() == records[3]
+        assert start(records[0], keys[0]).status_code == 200
+        assert start(records[0]).status_code == 409
+        canceled = client.post(f'/api/investigations/{records[0]["id"]}/attempts/{running[0]["attempts"][0]["id"]}/cancel')
+        assert canceled.status_code == 200
+        assert canceled.json()['status'] == '已取消'
+        assert client.get(f'/api/investigations/{records[3]["id"]}').json() == records[3]
+        assert start(records[3], rejected_key).status_code == 201
+        # 重放旧终态不能再次释放另一名额。
+        assert client.post(f'/api/investigations/{records[0]["id"]}/attempts/{running[0]["attempts"][0]["id"]}/cancel').status_code == 200
+        assert start(records[4]).status_code == 409
+    with configured_client(database_url, tmp_path) as restarted:
+        assert restarted.post(f'/api/investigations/{records[4]["id"]}/attempts', json={'service_id': 'orders'},
+                              headers={'Idempotency-Key': str(uuid4())}).status_code == 409
+
+
+def test_capacity_competition_across_real_business_processes(database_url, tmp_path):
+    from concurrent.futures import ThreadPoolExecutor
+    from contextlib import ExitStack
+    from threading import Barrier
+    from test_interruption import live_api
+    credential = uuid4().hex
+    with ExitStack() as stack:
+        servers = [stack.enter_context(live_api(database_url, credential, coordinate=False)) for _ in range(2)]
+        clients = [entry[0] for entry in servers]
+        records = [create(clients[i % 2])[0] for i in range(8)]
+        barrier = Barrier(8)
+        def compete(i):
+            barrier.wait(10)
+            return clients[i % 2].post(f'/api/investigations/{records[i]["id"]}/attempts',
+                json={'service_id': 'orders'}, headers={'Idempotency-Key': str(uuid4())})
+        with ThreadPoolExecutor(max_workers=8) as pool:
+            replies = list(pool.map(compete, range(8)))
+        assert sorted(reply.status_code for reply in replies) == [201, 201, 201, 409, 409, 409, 409, 409]
+        observed = clients[0].get('/api/investigations').json()['items']
+        assert sum(record['status'] == '调查中' for record in observed) == 3
+        assert all(len(record['attempts']) == (record['status'] == '调查中') for record in observed)
+        for i, reply in enumerate(replies):
+            if reply.status_code == 409:
+                assert clients[1].get(f'/api/investigations/{records[i]["id"]}').json() == records[i]
+        assert all(process.poll() is None for _, process in servers)
+        # 两进程都仍存活时，第三个重启服务不能重置持久容量。
+        with live_api(database_url, credential, coordinate=False) as (restarted, process):
+            pending = create(restarted)[0]
+            assert restarted.post(f'/api/investigations/{pending["id"]}/attempts', json={'service_id': 'orders'},
+                                  headers={'Idempotency-Key': str(uuid4())}).status_code == 409
+
+
+@pytest.mark.parametrize('phase', ['stopping', 'timeout_stopping', 'confirming_execution'])
+def test_capacity_keeps_unconfirmed_execution_until_safe_terminal(database_url, tmp_path, phase):
+    import asyncio
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from datetime import timedelta
+    from test_deadlines import ManualTicks
+    from test_evidence import started, material
+    from test_interruption import live_api, await_view
+    credential = uuid4().hex
+    now = [datetime.now(timezone.utc)]
+    entered, release = Event(), Event()
+    class Source:
+        async def query(self, **scope):
+            entered.set()
+            try:
+                await asyncio.Future()
+            except asyncio.CancelledError:
+                while not release.is_set():
+                    await asyncio.sleep(0.01)
+    with configured_client(database_url, tmp_path, executor_credential=credential, clock=lambda: now[0],
+                           deadline_schedule=ManualTicks(), query_sources={'controlled-orders': Source()}) as client:
+        from contextlib import ExitStack
+        with ExitStack() as stack:
+            owner = stack.enter_context(live_api(database_url, credential, coordinate=False))[0] if phase == 'confirming_execution' else client
+            path, before, evidence, auth = started(owner, credential)
+            for _ in range(2):
+                pending = create(client)[0]
+                assert client.post(f'/api/investigations/{pending["id"]}/attempts', json={'service_id': 'orders'},
+                                   headers={'Idempotency-Key': str(uuid4())}).status_code == 201
+            rejected = create(client)[0]
+            def retry():
+                return client.post(f'/api/investigations/{rejected["id"]}/attempts', json={'service_id': 'orders'},
+                                   headers={'Idempotency-Key': str(uuid4())})
+            with ThreadPoolExecutor(max_workers=1) as pool:
+                querying = None
+                if phase != 'confirming_execution':
+                    querying = pool.submit(client.post, evidence.removesuffix('/evidence') + '/queries',
+                                           headers={**auth, 'Idempotency-Key': str(uuid4())})
+                    assert entered.wait(5)
+                try:
+                    if phase == 'stopping':
+                        reply = client.post(path + '/attempts/' + before['attempts'][0]['id'] + '/cancel')
+                        assert reply.status_code == 200
+                    elif phase == 'timeout_stopping':
+                        now[0] += timedelta(minutes=11)
+                        assert client.post(evidence, json=material(), headers=auth).status_code == 403
+                    else:
+                        assert client.post(evidence.removesuffix('/evidence') + '/lost', headers=auth).status_code == 200
+                    waiting = client.get(path).json()
+                    assert waiting['attempts'][0]['execution_phase'] == phase
+                    assert waiting['status'] == '调查中'
+                    assert retry().status_code == 409
+                    assert client.get(f'/api/investigations/{rejected["id"]}').json() == rejected
+                finally:
+                    release.set()
+                if querying:
+                    assert querying.result(35).status_code == 403
+        if phase == 'confirming_execution':
+            with configured_client(database_url, tmp_path, executor_credential=credential) as observer:
+                await_view(observer, path, lambda v: v['status'] == '失败')
+        else:
+            assert client.get(path).json()['status'] in {'已取消', '失败'}
+        assert retry().status_code == 201
+
+
+def test_capacity_failed_acceptance_does_not_consume_last_place(database_url, tmp_path):
+    from app.attempts import ControlledExecutionAdapter
+    from sqlalchemy import text
+    class Acceptance(ControlledExecutionAdapter):
+        fail = False
+        def accept(self, connection, attempt_id):
+            super().accept(connection, attempt_id)
+            if self.fail:
+                connection.execute(text('SELECT 1 / 0'))
+    adapter = Acceptance()
+    with configured_client(database_url, tmp_path, execution_adapter=adapter) as client:
+        records = [create(client)[0] for _ in range(5)]
+        def start(i):
+            return client.post(f'/api/investigations/{records[i]["id"]}/attempts', json={'service_id': 'orders'},
+                               headers={'Idempotency-Key': str(uuid4())})
+        assert start(0).status_code == start(1).status_code == 201
+        adapter.fail = True
+        assert start(2).status_code == 503
+        assert client.get(f'/api/investigations/{records[2]["id"]}').json() == records[2]
+        adapter.fail = False
+        assert start(3).status_code == 201
+        assert start(4).status_code == 409
+
+
+@pytest.mark.parametrize('database_url', ['0012'], indirect=True)
+def test_capacity_upgrade_preserves_overfull_unknown_old_executions(database_url, tmp_path):
+    import os
+    import subprocess
+    import sys
+    from sqlalchemy import create_engine, text
+    engine = create_engine(database_url)
+    parents = []
+    try:
+        with engine.begin() as connection:
+            for _ in range(4):
+                parent, attempt = uuid4(), uuid4()
+                parents.append(parent)
+                # 旧版输入是迁移seam，不伪造退出证明；旧版可遗留超过3轮。
+                connection.execute(text("INSERT INTO investigations (id,title,description,created_at,updated_at) VALUES (:id,'旧运行','',now(),now())"), {'id': parent})
+                connection.execute(text("INSERT INTO attempts (id,investigation_id,request_key,request_body,attempt_number,service_id,source_ids,starts_at,ends_at,created_at,deadline_at,status) VALUES (:id,:parent,:key,'{}',1,'orders','[]',now()-interval '1 hour',now(),now(),now()+interval '10 minutes','调查中')"), {'id': attempt, 'parent': parent, 'key': uuid4()})
+                connection.execute(text("INSERT INTO controlled_executions (id,attempt_id,valid,stop_protocol) VALUES (:id,:attempt,true,'legacy_unknown')"), {'id': uuid4(), 'attempt': attempt})
+                connection.execute(text('INSERT INTO investigation_redaction_keys (investigation_id,secret) VALUES (:id,:secret)'), {'id': parent, 'secret': os.urandom(32)})
+    finally:
+        engine.dispose()
+    result = subprocess.run([sys.executable, '-m', 'alembic', '-c', 'backend/alembic.ini', 'upgrade', 'head'],
+                            env={**os.environ, 'DATABASE_URL': database_url}, capture_output=True)
+    assert result.returncode == 0, result.stderr
+    for _ in range(2):
+        with configured_client(database_url, tmp_path) as client:
+            for parent in parents:
+                record = client.get(f'/api/investigations/{parent}').json()
+                assert record['status'] == '调查中'
+                assert record['attempts'][0]['stop_confirmed_at'] is None
+                assert record['attempts'][0]['ended_at'] is None
+            pending = create(client)[0]
+            assert client.post(f'/api/investigations/{pending["id"]}/attempts', json={'service_id': 'orders'},
+                               headers={'Idempotency-Key': str(uuid4())}).status_code == 409
+            assert client.get(f'/api/investigations/{pending["id"]}').json() == pending
+
+
+@pytest.mark.parametrize('rollback', [False, True], ids=['commit', 'rollback'])
+def test_capacity_waiter_observes_committed_admission_or_rollback(database_url, tmp_path, rollback):
+    from concurrent.futures import ThreadPoolExecutor
+    from threading import Event
+    from time import monotonic
+    from sqlalchemy import create_engine, event, text
+    from sqlalchemy.engine import Engine
+    from test_deadlines import ManualTicks
+    accepted, release, waiting = Event(), Event(), Event()
+    pids = {}
+    def after(connection, cursor, statement, parameters, context, executemany):
+        if statement.startswith('INSERT INTO controlled_executions') and not accepted.is_set():
+            accepted.set()
+            assert release.wait(15)
+            if rollback:
+                cursor.execute('SELECT 1 / 0')
+    def before(connection, cursor, statement, parameters, context, executemany):
+        if accepted.is_set() and statement.startswith('SELECT instance_admission.'):
+            pids['waiter'] = connection.connection.driver_connection.info.backend_pid
+            waiting.set()
+    observer = create_engine(database_url)
+    try:
+        with configured_client(database_url, tmp_path, deadline_schedule=ManualTicks()) as first, configured_client(
+                database_url, tmp_path, deadline_schedule=ManualTicks()) as second:
+            records = [create(first)[0] for _ in range(4)]
+            def start(client, index):
+                return client.post(f'/api/investigations/{records[index]["id"]}/attempts', json={'service_id': 'orders'},
+                                   headers={'Idempotency-Key': str(uuid4())})
+            assert start(first, 0).status_code == start(second, 1).status_code == 201
+            event.listen(Engine, 'after_cursor_execute', after)
+            event.listen(Engine, 'before_cursor_execute', before)
+            try:
+                with ThreadPoolExecutor(max_workers=2) as pool:
+                    owner = pool.submit(start, first, 2)
+                    try:
+                        assert accepted.wait(10)
+                        waiter = pool.submit(start, second, 3)
+                        assert waiting.wait(10)
+                        limit = monotonic() + 10
+                        with observer.connect().execution_options(isolation_level='AUTOCOMMIT') as connection:
+                            while not connection.execute(text('SELECT cardinality(pg_blocking_pids(:pid))'), {'pid': pids['waiter']}).scalar_one():
+                                assert not waiter.done(), '后来的启动必须等待真实数据库接纳事务'
+                                assert monotonic() < limit
+                    finally:
+                        release.set()
+                    assert owner.result(15).status_code == (503 if rollback else 201)
+                    assert waiter.result(15).status_code == (201 if rollback else 409)
+            finally:
+                release.set()
+                event.remove(Engine, 'after_cursor_execute', after)
+                event.remove(Engine, 'before_cursor_execute', before)
+            assert first.get(f'/api/investigations/{records[2 if rollback else 3]["id"]}').json() == records[2 if rollback else 3]
+            assert sum(r['status'] == '调查中' for r in first.get('/api/investigations').json()['items']) == 3
+    finally:
+        release.set()
+        observer.dispose()
+
+
 def test_configured_services_are_available_without_secrets(database_url, tmp_path):
     from app.main import create_app
     config = tmp_path / "services.json"

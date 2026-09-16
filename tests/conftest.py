@@ -14,7 +14,7 @@ from sqlalchemy import create_engine, text
 ROOT = Path(__file__).resolve().parents[1]
 
 
-@pytest.fixture(scope='session', autouse=True)
+@pytest.fixture(autouse=True)
 def evidence_executor(tmp_path_factory):
     # UI必须先用全新隔离schema真实迁移，再启动API/Vite；凭证仅存在进程内。
     database = os.environ.get('TEST_DATABASE_URL', 'postgresql+psycopg://logscope_test:local_test_only@127.0.0.1:55433/logscope_test')
@@ -22,8 +22,13 @@ def evidence_executor(tmp_path_factory):
     parsed = make_url(database)
     assert parsed.host == '127.0.0.1' and parsed.port == 55433, 'UI只允许隔离PG17端口55433'
     for port in (8000, 5173):
-        with socket.socket() as probe:
-            assert probe.connect_ex(('127.0.0.1', port)) != 0, 'UI测试端口已占用，不能复用未知服务'
+        deadline = time.monotonic() + 10
+        while True:
+            with socket.socket() as probe:
+                probe.settimeout(0.1)
+                if probe.connect_ex(('127.0.0.1', port)) != 0:
+                    break
+            assert time.monotonic() < deadline, 'UI测试端口持续占用，不能复用未知服务'
     schema = 'issue03_ui_' + uuid4().hex
     engine = create_engine(database)
     with engine.begin() as connection:
