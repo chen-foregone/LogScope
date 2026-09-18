@@ -49,7 +49,8 @@ def create_app(database_url: str | None = None, *, services_file=None, executor_
     from app.execution import execution_router
     from app.interruption import interruption_router
     application.include_router(interruption_router(engine, executor_credential if executor_credential is not None else settings.executor_credential, business_clock), prefix=settings.api_prefix)
-    from app.evidence import evidence_router
+    from app.evidence import evidence_router, reference_router
+    application.include_router(reference_router(engine, business_clock, executor_credential if executor_credential is not None else settings.executor_credential), prefix=settings.api_prefix)
     from app.conclusions import conclusion_router
     from datetime import datetime, timezone
     from app.queries import QuerySchedule, query_router

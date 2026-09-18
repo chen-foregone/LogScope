@@ -491,7 +491,9 @@ def test_upgrade_0005_keeps_existing_evidence_and_accepts_conclusion(database_ur
     from test_investigations import ROOT
     engine = create_engine(database_url)
     old = MetaData()
-    old.reflect(engine)
+    with engine.connect() as connection:
+        connection.exec_driver_sql('SET max_parallel_workers_per_gather = 0')
+        old.reflect(connection)
     investigation, attempt, execution, evidence_id = [uuid4() for _ in range(4)]
     historical_attempt, historical_evidence = uuid4(), uuid4()
     now = datetime(2026, 11, 1, tzinfo=timezone.utc)

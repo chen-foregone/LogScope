@@ -67,7 +67,7 @@ class StartAttempt(BaseModel):
 def attempt_views(connection, investigation_id):
     rows = connection.execute(select(attempts).where(attempts.c.investigation_id == investigation_id)
                               .order_by(attempts.c.attempt_number)).mappings().all()
-    from app.evidence import evidence_views
+    from app.evidence import evidence_views, historical_reference_states
     views = []
     for row in rows:
         saved = evidence_views(connection, row['id'])
@@ -82,6 +82,7 @@ def attempt_views(connection, investigation_id):
         queried = query_views(connection, row['id'])
         views.append({key: row[key] for key in ('id', 'attempt_number', 'service_id', 'starts_at', 'ends_at', 'created_at', 'deadline_at', 'status', 'ended_at', 'result', 'end_reason')}
             | {'execution_mode': 'controlled', 'evidence': saved, 'evidence_count': len(saved), 'evidence_notices': notices,
+               'historical_reference_states': historical_reference_states(connection, row),
                'conclusions': history, 'conclusion': history[-1] if history else None,
                'queries': queried, 'query_coverage': query_coverage(queried, coverage_aliases(connection, row['id'], row['source_ids'])),
                'cancel_requested_at': row['cancel_requested_at'], 'stop_confirmed_at': row['stop_confirmed_at'],

@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 @pytest.fixture(autouse=True)
-def evidence_executor(tmp_path_factory):
+def evidence_executor(tmp_path_factory, request):
     # UI必须先用全新隔离schema真实迁移，再启动API/Vite；凭证仅存在进程内。
     database = os.environ.get('TEST_DATABASE_URL', 'postgresql+psycopg://logscope_test:local_test_only@127.0.0.1:55433/logscope_test')
     from sqlalchemy.engine import make_url
@@ -38,9 +38,16 @@ def evidence_executor(tmp_path_factory):
     env = {**os.environ, 'DATABASE_URL': database + '?options=-csearch_path%3D' + schema,
            'PYTHONPATH': str(ROOT / 'backend'), 'SERVICES_FILE': str(ROOT / 'backend/services.example.json'),
            'EXECUTOR_CREDENTIAL': credential, 'NO_PROXY': '127.0.0.1,localhost', 'no_proxy': '127.0.0.1,localhost'}
-    migration = subprocess.run([sys.executable, '-m', 'alembic', '-c', 'backend/alembic.ini', 'upgrade', 'head'],
+    legacy_mode = getattr(request, 'param', None)
+    legacy = legacy_mode in ('legacy_history', 'legacy_narrow')
+    migration = subprocess.run([sys.executable, '-m', 'alembic', '-c', 'backend/alembic.ini', 'upgrade', '0013' if legacy else 'head'],
                                cwd=ROOT, env=env, capture_output=True)
     assert migration.returncode == 0, 'UI隔离schema真实迁移失败'
+    legacy_path = legacy_ids = None
+    if legacy:
+        sys.path.insert(0, str(ROOT / 'backend/tests'))
+        from test_historical_evidence import upgrade_reliable_history
+        legacy_path, legacy_ids = upgrade_reliable_history(env['DATABASE_URL'], 'narrow' if legacy_mode == 'legacy_narrow' else 'same')
     fixture_dir = tmp_path_factory.mktemp('query_ui')
     import json
     config = fixture_dir / 'services.json'
@@ -101,6 +108,8 @@ uvicorn.run(create_app(clock=clock, query_sources={'ui-limited': Limited(), 'ui-
             pass
         headers = ExecutorHeaders(Authorization='Bearer ' + credential)
         headers.database_url = env['DATABASE_URL']
+        headers.legacy_path, headers.legacy_ids = legacy_path, legacy_ids
+        headers.legacy_mode = legacy_mode
         yield headers
     finally:
         for process in reversed(processes):

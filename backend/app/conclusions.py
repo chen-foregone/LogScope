@@ -9,7 +9,7 @@ from pydantic import Field, ValidationError
 from sqlalchemy import Column, DateTime, ForeignKey, Integer, JSON, Table, Text, Uuid, insert, select, update
 
 from app.attempts import attempts, executions
-from app.evidence import StrictInput, evidence
+from app.evidence import StrictInput, evidence, included_evidence
 from app.investigations import investigations, metadata
 
 conclusions = Table('conclusions', metadata,
@@ -89,8 +89,7 @@ def conclusion_router(engine, credential, clock):
                 history = conclusion_views(connection, attempt_id)
                 if payload.expected_version != len(history):
                     raise HTTPException(409, '结论版本已变化，请读取当前版本')
-                saved = connection.execute(select(evidence).where(evidence.c.attempt_id == attempt_id,
-                    evidence.c.id.in_(payload.evidence_ids))).mappings().all()
+                saved = connection.execute(included_evidence(attempt_id).where(evidence.c.id.in_(payload.evidence_ids))).mappings().all()
                 if len(saved) != len(set(payload.evidence_ids)) or len(set(payload.evidence_ids)) != len(payload.evidence_ids):
                     raise HTTPException(422, '证据必须为本轮已纳入的不同证据')
                 if payload.kind == 'hypothesis':
@@ -113,7 +112,7 @@ def conclusion_router(engine, credential, clock):
                     raise HTTPException(422, '未确认结论须明确缺失证据')
                 supported = False
                 unresolved = False
-                all_saved = connection.execute(select(evidence).where(evidence.c.attempt_id == attempt_id)).mappings().all()
+                all_saved = connection.execute(included_evidence(attempt_id)).mappings().all()
                 for item in all_saved:
                     record = item['material'].get('snippet', {})
                     trace = record.get('causal_trace')

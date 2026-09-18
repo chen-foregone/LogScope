@@ -7,6 +7,7 @@ type Evidence = {
   query: { starts_at: string; ends_at: string; fields: Record<string, string> }
   snippet: { event: string; error_code: string; fields: Record<string, string> }
   locator: string | null; redaction_note: string
+  source_attempt_id: string; source_attempt_number: number; verification: string
 }
 type Conclusion = {
   id: string; version: number; created_at: string; kind: 'hypothesis' | 'confirmed' | 'undetermined'
@@ -35,7 +36,7 @@ type Investigation = {
   severity_source: 'human' | 'agent' | null
   severity_assessed_at: string | null
   evidence_count: number
-  attempts: { id: string; attempt_number: number; execution_phase: string; cancel_requested_at: string | null; deadline_at: string; timeout_requested_at: string | null; stop_confirmed_at: string | null; service_id: string; starts_at: string; ends_at: string; status: string; execution_mode: 'controlled'; evidence_count: number; evidence: Evidence[]; evidence_notices: string[]; ended_at: string | null; result: string | null; end_reason: string | null; conclusion: Conclusion | null; conclusions: Conclusion[]; queries: QueryRun[]; query_coverage: { complete: boolean; missing_sources: string[]; notice: string } }[]
+  attempts: { id: string; attempt_number: number; execution_phase: string; cancel_requested_at: string | null; deadline_at: string; timeout_requested_at: string | null; stop_confirmed_at: string | null; service_id: string; starts_at: string; ends_at: string; status: string; execution_mode: 'controlled'; evidence_count: number; evidence: Evidence[]; historical_reference_states: Record<string, { included_evidence_id: string | null; reference_allowed: boolean }>; evidence_notices: string[]; ended_at: string | null; result: string | null; end_reason: string | null; conclusion: Conclusion | null; conclusions: Conclusion[]; queries: QueryRun[]; query_coverage: { complete: boolean; missing_sources: string[]; notice: string } }[]
   created_at: string
   updated_at: string
   retention_expires_at: string | null
@@ -64,6 +65,36 @@ async function cancelInvestigation(attemptId: string) {
     if (isCurrent()) cancelError.value = cause instanceof Error ? cause.message : '取消结果未确认，请刷新状态'
   } finally {
     if (isCurrent()) canceling.value = null
+  }
+}
+const referencing = ref<string | null>(null)
+const referenceError = ref('')
+function historicalState(id: string) {
+  return referenceTarget()?.historical_reference_states[id]
+}
+function referenceTarget() {
+  const latest = selected.value?.attempts.at(-1)
+  return latest?.status === '调查中' && latest.execution_phase === 'running' ? latest : null
+}
+async function includeHistorical(evidenceId: string) {
+  const target = referenceTarget()
+  if (!selected.value || !target || referencing.value) return
+  const id = selected.value.id
+  const sequence = readSequence
+  const route = location.hash
+  const isCurrent = () => sequence === readSequence && location.hash === route && selected.value?.id === id
+  referencing.value = evidenceId
+  referenceError.value = ''
+  try {
+    await request(`/${id}/attempts/${target.id}/evidence-references`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ evidence_id: evidenceId }),
+    })
+    const record = await request<Investigation>(`/${id}`)
+    if (isCurrent()) selected.value = record
+  } catch (cause) {
+    if (isCurrent()) referenceError.value = cause instanceof Error ? cause.message : '纳入结果未确认，请刷新后核实；重复引用不会重复计数'
+  } finally {
+    if (isCurrent()) referencing.value = null
   }
 }
 const starting = ref(false)
@@ -172,6 +203,8 @@ async function loadPage() {
   selected.value = null
   canceling.value = null
   cancelError.value = ''
+  referencing.value = null
+  referenceError.value = ''
   pendingStart.value = null
   startBlocked.value = false
   starting.value = false
@@ -396,10 +429,18 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
                 <p>修复建议仅供参考，不执行环境写操作。</p>
               </article>
               <h4>脱敏证据</h4>
+              <p v-if="referenceTarget() && attempt.id !== referenceTarget()?.id">历史证据须显式纳入，服务、固定时间范围与核验材料由服务端核验；引用不表示本轮覆盖完整。</p>
+              <p v-if="referenceError && attempt.id === selected.attempts.at(-1)?.id" role="alert">{{ referenceError }}</p>
               <p>本轮证据条数：{{ attempt.evidence_count }}；可靠身份重复只计一次，缺少可靠身份逐条保留。不表示日志扫描量、故障数、根因数或覆盖完整率。</p>
               <p v-if="!attempt.evidence.length">尚无已保存证据。</p>
               <p v-for="notice in attempt.evidence_notices" :key="notice" role="status">{{ notice }}</p>
               <article v-for="item in attempt.evidence" :id="`evidence-${attempt.id}-${item.id}`" :key="item.id" aria-label="脱敏证据" class="evidence-card">
+                <p>来源轮次：第{{ item.source_attempt_number }}轮 <button @click="locateAttempt(item.source_attempt_id)">查看来源轮</button></p>
+                <p>{{ item.verification === 'retained_structured_material' ? '已保留受控脱敏结构化核验材料' : '不可核验：缺少最低核验材料' }}；代号定位不能直接打开原链接。</p>
+                <template v-if="referenceTarget() && item.source_attempt_id === attempt.id && attempt.id !== referenceTarget()?.id">
+                  <el-button :disabled="!!referencing || (!!historicalState(item.id)?.included_evidence_id && !!historicalState(item.id)?.reference_allowed)" @click="includeHistorical(item.id)">{{ historicalState(item.id)?.included_evidence_id && historicalState(item.id)?.reference_allowed ? '已纳入本轮' : '纳入本轮' }}</el-button>
+                  <p v-if="historicalState(item.id)?.included_evidence_id && !historicalState(item.id)?.reference_allowed">本轮已等价纳入其他核验材料；此旧材料仍不符合引用条件，不能据此纳入。</p>
+                </template>
                 <dl>
                   <dt>来源</dt><dd>{{ item.source }}</dd>
                   <dt>发生时间</dt><dd>{{ displayTime(item.occurred_at) }}</dd>

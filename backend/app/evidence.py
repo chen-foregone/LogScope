@@ -24,6 +24,11 @@ evidence = Table('evidence', metadata,
     Column('identity_status', String(24), nullable=False),
     UniqueConstraint('attempt_id', 'identity_key', name='uq_evidence_attempt_identity'))
 
+attempt_evidence = Table('attempt_evidence', metadata,
+    Column('attempt_id', Uuid, ForeignKey('attempts.id'), primary_key=True),
+    Column('evidence_id', Uuid, ForeignKey('evidence.id'), primary_key=True),
+    Column('included_at', DateTime(timezone=True), nullable=False))
+
 CREDENTIALS = {'password', 'token', 'key', 'session', 'authorization', 'cookie', 'secret'}
 NOTE = '受控结构化事件v1：凭据屏蔽，身份与关联标识使用调查内代号，定位整体不可逆代号化；不接收自由文本或未知字段。代号定位须由受控来源重新核验，不能直接打开原链接。'
 
@@ -105,10 +110,128 @@ class Material(StrictInput):
     identity: Annotated[RecordIdentity | FileIdentity, Field(discriminator='kind')] | None = None
 
 
+def included_evidence(attempt_id):
+    return select(evidence).join(attempt_evidence, attempt_evidence.c.evidence_id == evidence.c.id).where(
+        attempt_evidence.c.attempt_id == attempt_id)
+
+
+def evidence_view(connection, row):
+    origin = connection.execute(select(attempts.c.attempt_number).where(attempts.c.id == row['attempt_id'])).scalar_one()
+    return dict(row['material'], id=str(row['id']), identity_status=row['identity_status'],
+        source_attempt_id=str(row['attempt_id']), source_attempt_number=origin,
+        verification='retained_structured_material' if verifiable(row['material']) else 'unverifiable')
+
+
+def verifiable(material):
+    try:
+        snippet = material['snippet']
+        Record.model_validate(snippet)
+        Query.model_validate_json(json.dumps(material['query']))
+        return bool(material['source']) and datetime.fromisoformat(material['occurred_at']).tzinfo is not None
+    except (KeyError, TypeError, ValueError):
+        return False
+
+
+def historical_reference_states(connection, target):
+    historical = connection.execute(select(evidence).join(attempts, attempts.c.id == evidence.c.attempt_id).where(
+        attempts.c.investigation_id == target['investigation_id'],
+        attempts.c.attempt_number < target['attempt_number'])).mappings().all()
+    present = connection.execute(included_evidence(target['id'])).mappings().all()
+    from app.queries import coverage_aliases
+    sources = coverage_aliases(connection, target['id'], target['source_ids'])
+    states = {}
+    for source in historical:
+        equivalent = next((item for item in present if item['id'] == source['id'] or (
+            source['identity_key'] and item['identity_key'] == source['identity_key']
+            and source['content_key'] and item['content_key'] == source['content_key'])), None)
+        origin = connection.execute(select(attempts).where(attempts.c.id == source['attempt_id'])).mappings().one()
+        material = source['material']
+        allowed = (verifiable(material) and origin['service_id'] == target['service_id']
+            and material['source'] in sources
+            and target['starts_at'] <= datetime.fromisoformat(material['query']['starts_at']) <=
+            datetime.fromisoformat(material['occurred_at']) < datetime.fromisoformat(material['query']['ends_at']) <= target['ends_at'])
+        conflict = source['identity_key'] and any(item['identity_key'] == source['identity_key']
+            and item['content_key'] != source['content_key'] for item in [*historical, *present])
+        states[str(source['id'])] = {'included_evidence_id': str(equivalent['id']) if equivalent else None,
+            'reference_allowed': bool(allowed and not conflict)}
+    return states
+
+
 def evidence_views(connection, attempt_id):
-    rows = connection.execute(select(evidence).where(evidence.c.attempt_id == attempt_id)
-                              .order_by(evidence.c.created_at, evidence.c.id)).mappings()
-    return [dict(row['material'], id=str(row['id']), identity_status=row['identity_status']) for row in rows]
+    rows = connection.execute(included_evidence(attempt_id).order_by(evidence.c.created_at, evidence.c.id)).mappings()
+    return [evidence_view(connection, row) for row in rows]
+
+
+class ReferenceInput(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    evidence_id: UUID
+
+
+def reference_router(engine, clock, credential):
+    router = APIRouter()
+
+    @router.post('/executor/investigations/{investigation_id}/attempts/{attempt_id}/executions/{execution_id}/evidence-references', status_code=201, include_in_schema=False)
+    @router.post('/investigations/{investigation_id}/attempts/{attempt_id}/evidence-references', status_code=201)
+    def reference(investigation_id: UUID, attempt_id: UUID, payload: ReferenceInput, response: Response,
+                  request: Request, execution_id: UUID | None = None,
+                  authorization: Annotated[str | None, Header()] = None):
+        controlled = '/executions/{execution_id}/' in request.scope['route'].path
+        if controlled and (not credential or not authorization or not secrets.compare_digest(
+                authorization.encode('utf-8'), f'Bearer {credential}'.encode('utf-8'))):
+            raise HTTPException(401, '受控执行凭证无效')
+        try:
+            with engine.begin() as connection:
+                parent = connection.execute(select(investigations.c.id).where(
+                    investigations.c.id == investigation_id).with_for_update()).first()
+                row = connection.execute(select(attempts).join(executions, executions.c.attempt_id == attempts.c.id).where(
+                    attempts.c.investigation_id == investigation_id, attempts.c.id == attempt_id,
+                    attempts.c.status == '调查中', executions.c.valid.is_(True),
+                    *((executions.c.id == execution_id,) if controlled else ())).with_for_update()).mappings().first()
+                if parent is None or row is None:
+                    raise HTTPException(403, '执行身份或轮次无效')
+                from app.deadlines import enforce_deadline, finalize_deadline
+                enforce_deadline(connection, row, clock())
+                pending = connection.begin_nested()
+                source = connection.execute(select(evidence).join(attempts, attempts.c.id == evidence.c.attempt_id).where(
+                    evidence.c.id == payload.evidence_id, attempts.c.investigation_id == investigation_id,
+                    attempts.c.attempt_number < row['attempt_number'])).mappings().first()
+                if source is None:
+                    raise HTTPException(422, '历史证据不属于本调查先前轮次')
+                origin = connection.execute(select(attempts).where(attempts.c.id == source['attempt_id'])).mappings().one()
+                material = source['material']
+                if not verifiable(material):
+                    raise HTTPException(422, '历史证据不可核验：缺少保留的受控片段、来源、时间或查询条件')
+                from app.queries import coverage_aliases
+                if origin['service_id'] != row['service_id'] or material['source'] not in coverage_aliases(connection, attempt_id, row['source_ids']):
+                    raise HTTPException(422, '历史证据服务或来源不符合本轮范围')
+                if not (row['starts_at'] <= datetime.fromisoformat(material['query']['starts_at']) <=
+                        datetime.fromisoformat(material['occurred_at']) < datetime.fromisoformat(material['query']['ends_at']) <= row['ends_at']):
+                    raise HTTPException(422, '历史证据发生时间或查询范围不符合本轮固定范围')
+                if source['identity_key']:
+                    matches = connection.execute(select(evidence).join(attempts, attempts.c.id == evidence.c.attempt_id).where(
+                        attempts.c.investigation_id == investigation_id,
+                        evidence.c.identity_key == source['identity_key'])).mappings().all()
+                    if any(item['content_key'] != source['content_key'] for item in matches):
+                        raise HTTPException(409, '证据身份冲突：同一可靠身份的原始事件内容发生变化；旧证据保留，本次未纳入')
+                present = connection.execute(included_evidence(attempt_id).where(
+                    evidence.c.identity_key == source['identity_key'] if source['identity_key'] else
+                    evidence.c.id == source['id'])).mappings().first()
+                if present:
+                    source = present
+                    response.status_code = 200
+                else:
+                    now = clock()
+                    connection.execute(insert(attempt_evidence).values(attempt_id=attempt_id, evidence_id=source['id'], included_at=now))
+                    connection.execute(update(investigations).where(investigations.c.id == investigation_id).values(updated_at=now))
+                result = evidence_view(connection, source)
+                finalize_deadline(connection, row, clock, pending)
+            return result
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(503, '历史证据纳入结果未确认，请读取本轮材料；诊断不包含原文') from None
+
+    return router
 
 
 def evidence_router(engine, credential, clock):
@@ -184,20 +307,47 @@ def evidence_router(engine, credential, clock):
                 # 比较原始受控事件而非脱敏片段；查询与定位是获取上下文，不是原始事件内容。
                 content_key = alias('evidence-content-v1', [result['occurred_at'], payload.record.model_dump(exclude={'causal_trace'} if payload.record.causal_trace is None else set())]) if identity_key else None
                 if identity_key:
-                    existing = connection.execute(select(evidence).where(
-                        evidence.c.attempt_id == attempt_id, evidence.c.identity_key == identity_key)).mappings().first()
-                    if existing:
-                        if existing['content_key'] != content_key:
-                            raise HTTPException(409, '证据身份冲突：同一可靠身份的原始事件内容发生变化；旧证据保留，本次未纳入')
-                        finalize_deadline(connection, row, clock, pending)
-                        response.status_code = 200
-                        return dict(existing['material'], id=str(existing['id']), identity_status=existing['identity_status'])
+                    matches = connection.execute(select(evidence).join(attempts, attempts.c.id == evidence.c.attempt_id).where(
+                        attempts.c.investigation_id == investigation_id, evidence.c.identity_key == identity_key)
+                        .order_by(attempts.c.attempt_number, evidence.c.created_at, evidence.c.id)).mappings().all()
+                    if any(item['content_key'] != content_key for item in matches):
+                        raise HTTPException(409, '证据身份冲突：同一可靠身份的原始事件内容发生变化；旧证据保留，本次未纳入')
+                    if matches:
+                        existing = matches[0]
+                        present = connection.execute(included_evidence(attempt_id).where(evidence.c.identity_key == identity_key)).mappings().first()
+                        if present:
+                            existing = present
+                            response.status_code = 200
+                        else:
+                            # 新获取已通过本轮范围校验；旧材料不适用时保存本次核验上下文，不改历史。
+                            existing = None
+                            for candidate in matches:
+                                origin = connection.execute(select(attempts).where(attempts.c.id == candidate['attempt_id'])).mappings().one()
+                                retained = candidate['material']
+                                if (verifiable(retained) and origin['service_id'] == row['service_id']
+                                        and retained['source'] == result['source']
+                                        and row['starts_at'] <= datetime.fromisoformat(retained['query']['starts_at']) <=
+                                        datetime.fromisoformat(retained['occurred_at']) < datetime.fromisoformat(retained['query']['ends_at']) <= row['ends_at']):
+                                    existing = candidate
+                                    break
+                            if existing:
+                                now = clock()
+                                connection.execute(insert(attempt_evidence).values(attempt_id=attempt_id, evidence_id=existing['id'], included_at=now))
+                                connection.execute(update(investigations).where(investigations.c.id == investigation_id).values(updated_at=now))
+                        if existing:
+                            result = evidence_view(connection, existing)
+                            finalize_deadline(connection, row, clock, pending)
+                            return result
                 status = 'reliable' if identity_key else 'unavailable'
                 identity = uuid4()
                 now = clock()
                 connection.execute(insert(evidence).values(id=identity, attempt_id=attempt_id, created_at=now, material=result,
                     identity_key=identity_key, content_key=content_key, identity_status=status))
+                connection.execute(insert(attempt_evidence).values(attempt_id=attempt_id, evidence_id=identity, included_at=now))
                 result['identity_status'] = status
+                result['source_attempt_id'] = str(attempt_id)
+                result['source_attempt_number'] = row['attempt_number']
+                result['verification'] = 'retained_structured_material'
                 connection.execute(update(investigations).where(investigations.c.id == investigation_id).values(updated_at=now))
                 result['id'] = str(identity)
                 finalize_deadline(connection, row, clock, pending)

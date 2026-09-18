@@ -569,7 +569,9 @@ def test_upgrade_derives_original_deadline_but_never_invents_old_executor_exit(d
     import secrets
     engine = create_engine(database_url)
     old = MetaData()
-    old.reflect(engine)
+    with engine.connect() as connection:
+        connection.exec_driver_sql('SET max_parallel_workers_per_gather = 0')
+        old.reflect(connection)
     parent, attempt, execution = uuid4(), uuid4(), uuid4()
     start = datetime(2026, 11, 3, 12, tzinfo=timezone.utc)
     with engine.begin() as connection:

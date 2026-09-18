@@ -283,7 +283,9 @@ def test_upgrade_keeps_legacy_evidence_without_guessing_identity(database_url, t
     # 迁移夹具安排真实旧schema产物；升级后的业务结果只通过HTTP读取。
     engine = create_engine(database_url)
     old = MetaData()
-    old.reflect(engine)
+    with engine.connect() as connection:
+        connection.exec_driver_sql('SET max_parallel_workers_per_gather = 0')
+        old.reflect(connection)
     investigation, attempt, execution = uuid4(), uuid4(), uuid4()
     ids = [uuid4(), uuid4()]
     now = datetime(2026, 11, 1, tzinfo=timezone.utc)

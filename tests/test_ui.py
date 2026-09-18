@@ -10,6 +10,121 @@ from playwright.sync_api import sync_playwright, expect
 BASE = os.environ.get("UI_BASE_URL", "http://127.0.0.1:5173")
 
 
+@pytest.mark.parametrize('reacquire', [False, True])
+def test_history_reference_ui_preserves_material_and_shows_rejection(evidence_executor, reacquire):
+    from sys import path as pythonpath
+    from pathlib import Path
+    pythonpath.insert(0, str(Path(__file__).resolve().parents[1] / 'backend/tests'))
+    from test_evidence import material
+    with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client, sync_playwright() as p:
+        record = client.post('/api/investigations', json={'title': '历史纳入-' + uuid4().hex[:8]},
+                             headers={'Idempotency-Key': str(uuid4())}).json()
+        path = '/api/investigations/' + record['id']
+        scope = {'service_id': 'orders', 'starts_at': '2026-11-01T00:00:00Z', 'ends_at': '2026-11-01T01:00:00Z'}
+        first = client.post(path + '/attempts', json=scope, headers={'Idempotency-Key': str(uuid4())}).json()
+        origin = first['attempts'][0]['id']
+        executions = '/api/executor' + path.removeprefix('/api') + '/attempts/' + origin + '/executions'
+        execution = client.get(executions, headers=evidence_executor).json()['executions'][0]['id']
+        payload = {**material(), 'identity': {'kind': 'record', 'record_id': uuid4().hex}}
+        original = client.post(executions + '/' + execution + '/evidence', json=payload, headers=evidence_executor).json()
+        assert client.post(path + '/attempts/' + origin + '/cancel').status_code == 200
+        history = client.get(path).json()['attempts'][0]
+        current = client.post(path + '/attempts', json={**scope, **({'starts_at': '2026-11-01T00:10:00Z'} if reacquire else {})},
+                              headers={'Idempotency-Key': str(uuid4())}).json()
+        target = current['attempts'][-1]['id']
+        if reacquire:
+            executions = '/api/executor' + path.removeprefix('/api') + '/attempts/' + target + '/executions'
+            execution = client.get(executions, headers=evidence_executor).json()['executions'][0]['id']
+            payload['query']['starts_at'] = '2026-11-01T00:10:00Z'
+            acquired = client.post(executions + '/' + execution + '/evidence', json=payload, headers=evidence_executor)
+            assert acquired.status_code == 201
+            saved = acquired.json()
+            assert saved['id'] != original['id']
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.goto(BASE + '/#/investigations/' + record['id'])
+            expect(page.get_by_role('button', name='纳入本轮', exact=True)).to_have_count(1)
+            page.get_by_role('button', name='纳入本轮', exact=True).click()
+            latest = page.locator('#attempt-' + target)
+            if reacquire:
+                expect(page.get_by_text('本轮已等价纳入其他核验材料；此旧材料仍不符合引用条件，不能据此纳入。', exact=True)).to_be_visible()
+                expect(page.get_by_role('button', name='已纳入本轮', exact=True)).to_have_count(0)
+                expect(page.get_by_role('alert')).to_contain_text('不符合本轮固定范围')
+            expect(latest).to_contain_text('来源轮次：第2轮' if reacquire else '来源轮次：第1轮')
+            expect(latest).to_contain_text('已保留受控脱敏结构化核验材料')
+            expect(latest).to_contain_text('本轮证据条数：1')
+            expect(latest).to_contain_text(original['source'])
+            expect(latest).to_contain_text('request_failed')
+            if reacquire:
+                card = page.locator('[id="evidence-' + target + '-' + saved['id'] + '"]')
+                expect(card).to_contain_text('来源轮次：第2轮')
+                expect(card.get_by_role('button', name='查看来源轮')).to_have_count(1)
+                assert client.get(path).json()['attempts'][-1]['evidence'] == [saved]
+            else:
+                expect(page.get_by_role('button', name='已纳入本轮', exact=True)).to_be_disabled()
+            after = client.get(path).json()
+            assert after['attempts'][0] == history
+            assert not after['attempts'][-1]['query_coverage']['complete']
+            page.reload()
+            expect(page.locator('#attempt-' + target)).to_contain_text('来源轮次：第2轮' if reacquire else '来源轮次：第1轮')
+            assert client.get(path).json() == after
+            assert client.post(path + '/attempts/' + target + '/cancel').status_code == 200
+            next_round = client.post(path + '/attempts', json={**scope, 'starts_at': '2026-11-01T00:16:00Z'},
+                                     headers={'Idempotency-Key': str(uuid4())}).json()
+            page.reload()
+            page.get_by_role('button', name='纳入本轮', exact=True).first.click()
+            expect(page.get_by_role('alert')).to_contain_text('不符合本轮固定范围')
+            assert client.get(path).json() == next_round
+        finally:
+            browser.close()
+
+
+@pytest.mark.parametrize('evidence_executor', ['legacy_history', 'legacy_narrow'], indirect=True)
+def test_legacy_equivalent_history_ui_survives_refresh(evidence_executor):
+    path, identities = evidence_executor.legacy_path, evidence_executor.legacy_ids
+    narrow = evidence_executor.legacy_mode == 'legacy_narrow'
+    with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client, sync_playwright() as p:
+        scope = {'service_id': 'orders', 'starts_at': '2026-11-01T00:00:00Z', 'ends_at': '2026-11-01T01:00:00Z'}
+        if narrow:
+            scope['starts_at'] = '2026-11-01T00:10:00Z'
+        history = client.get(path).json()['attempts']
+        response = client.post(path + '/attempts', json=scope, headers={'Idempotency-Key': str(uuid4())})
+        assert response.status_code == 201
+        target = response.json()['attempts'][-1]['id']
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.goto(BASE + '/#' + path.removeprefix('/api'))
+            expect(page.get_by_role('button', name='纳入本轮', exact=True)).to_have_count(2)
+            page.get_by_role('button', name='纳入本轮', exact=True).first.click()
+            for reload in (False, True):
+                if reload:
+                    page.reload()
+                expect(page.get_by_role('button', name='已纳入本轮', exact=True)).to_have_count(1 if narrow else 2)
+                for button in page.get_by_role('button', name='已纳入本轮', exact=True).all():
+                    expect(button).to_be_disabled()
+                expect(page.get_by_role('button', name='纳入本轮', exact=True)).to_have_count(1 if narrow else 0)
+                if narrow:
+                    expect(page.get_by_text('本轮已等价纳入其他核验材料；此旧材料仍不符合引用条件，不能据此纳入。', exact=True)).to_be_visible()
+                expect(page.locator('#attempt-' + target)).to_contain_text('本轮证据条数：1')
+            after = client.get(path).json()
+            assert after['attempts'][:2] == history
+            if narrow:
+                page.get_by_role('button', name='纳入本轮', exact=True).click()
+                expect(page.get_by_role('alert')).to_contain_text('不符合本轮固定范围')
+            replies = [client.post(path + '/attempts/' + target + '/evidence-references', json={'evidence_id': str(identity)})
+                       for identity in identities]
+            assert [reply.status_code for reply in replies] == ([200, 422] if narrow else [200, 200])
+            public = client.get(path)
+            assert public.json() == after
+            for private in ('identity_key', 'content_key', 'a' * 64, 'b' * 64, 'legacy-test-key-not-sensitive-1234'):
+                assert private not in public.text
+                assert private not in page.content()
+        finally:
+            browser.close()
+
+
 def test_capacity_ui_explains_no_start_and_only_manual_retry(evidence_executor):
     with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client, sync_playwright() as p:
         records = [client.post('/api/investigations', json={'title': '容量-' + uuid4().hex[:8]},
