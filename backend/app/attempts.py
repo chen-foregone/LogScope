@@ -97,7 +97,10 @@ def attempt_views(connection, investigation_id):
 
 
 def current_view(connection, row):
-    return representation(row, attempt_views(connection, row["id"]))
+    from app.severity import severity_view
+    views = attempt_views(connection, row['id'])
+    history, suggestions = severity_view(connection, row['id'], row['severity_version'], views[-1] if views else None)
+    return representation(row, views) | {'severity_history': history, 'severity_suggestions': suggestions}
 
 
 class ControlledExecutionAdapter:

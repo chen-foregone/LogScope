@@ -26,6 +26,58 @@ function locateEvidence(attemptId: string, id: string) {
 function locateAttempt(id: string) {
   document.getElementById(`attempt-${id}`)?.scrollIntoView({ block: 'start' })
 }
+type SeverityEvent = {
+  id: string; sequence: number; kind: string; version: number; severity: string; source: string
+  assessed_at: string; basis: { business: string; users: string; duration: string; alternative: string }
+  status?: string; attempt_id: string | null
+}
+function humanPrecedence(record: Investigation): boolean {
+  const decisions = record.severity_history.filter(event => event.kind !== 'suggestion')
+  return decisions.length ? decisions[decisions.length - 1].source === 'human' : record.severity_source === 'human'
+}
+const impactLabels: Record<string, string> = {
+  core_unavailable: '核心业务不可用', key_operations_blocked: '关键操作无法完成', partial_or_slow: '部分业务受损或明显变慢',
+  local_minor: '局部轻微且不妨碍关键业务', insufficient: '影响信息不足', broad: '大范围用户', partial: '部分用户', local: '局部用户',
+  unknown: '信息不足', ongoing: '持续中', intermittent: '间歇出现', ended: '已结束', available: '有替代路径', none: '无替代路径', not_needed: '不妨碍关键操作',
+}
+const impactForm = ref({ business: 'insufficient', users: 'unknown', duration: 'unknown', alternative: 'unknown' })
+const severityBusy = ref(false)
+const severityError = ref('')
+const severityPending = new Map<string, { key: string; body: string; path: string }>()
+async function saveSeverity(suggestion?: SeverityEvent) {
+  if (!selected.value || severityBusy.value) return
+  const id = selected.value.id, sequence = readSequence, route = location.hash
+  const current = () => readSequence === sequence && location.hash === route && selected.value?.id === id
+  const path = suggestion ? `/${id}/severity/suggestions/${suggestion.id}/confirm` : `/${id}/severity`
+  const body = JSON.stringify({ expected_version: selected.value.severity_version,
+    ...(suggestion ? {} : { basis: { format: 'controlled-impact-v1', ...impactForm.value } }) })
+  const existing = severityPending.get(id)
+  if (existing && (existing.body !== body || existing.path !== path)) {
+    severityError.value = '上次等级操作结果未确认，请先按原内容重试或刷新核实，不能替换待确认请求。'
+    return
+  }
+  const pending = existing ?? { key: crypto.randomUUID(), body, path }
+  severityPending.set(id, pending)
+  severityBusy.value = true
+  severityError.value = ''
+  try {
+    const response = await fetch('/api/investigations' + pending.path, { method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key': pending.key }, body: pending.body })
+    if (!response.ok) {
+      if (response.status < 500) severityPending.delete(id)
+      const problem = await response.json().catch(() => null)
+      throw new Error(typeof problem?.detail === 'string' ? problem.detail : '评估不可用，请刷新后重试')
+    }
+    severityPending.delete(id)
+    const record = await request<Investigation>(`/${id}`)
+    if (current()) selected.value = record
+  } catch (cause) {
+    if (current()) severityError.value = cause instanceof Error ? cause.message : '等级结果未确认，请按原内容重试'
+  } finally {
+    if (current()) severityBusy.value = false
+  }
+}
+
 type Investigation = {
   id: string
   title: string
@@ -35,6 +87,9 @@ type Investigation = {
   severity: '未评估' | '高' | '中' | '低'
   severity_source: 'human' | 'agent' | null
   severity_assessed_at: string | null
+  severity_version: number
+  severity_history: SeverityEvent[]
+  severity_suggestions: SeverityEvent[]
   evidence_count: number
   attempts: { id: string; attempt_number: number; execution_phase: string; cancel_requested_at: string | null; deadline_at: string; timeout_requested_at: string | null; stop_confirmed_at: string | null; service_id: string; starts_at: string; ends_at: string; status: string; execution_mode: 'controlled'; evidence_count: number; evidence: Evidence[]; historical_reference_states: Record<string, { included_evidence_id: string | null; reference_allowed: boolean }>; evidence_notices: string[]; ended_at: string | null; result: string | null; end_reason: string | null; conclusion: Conclusion | null; conclusions: Conclusion[]; queries: QueryRun[]; query_coverage: { complete: boolean; missing_sources: string[]; notice: string } }[]
   created_at: string
@@ -205,6 +260,9 @@ async function loadPage() {
   cancelError.value = ''
   referencing.value = null
   referenceError.value = ''
+  severityBusy.value = false
+  severityError.value = ''
+  impactForm.value = { business: 'insufficient', users: 'unknown', duration: 'unknown', alternative: 'unknown' }
   pendingStart.value = null
   startBlocked.value = false
   starting.value = false
@@ -381,6 +439,34 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
             <div><dt>保留至</dt><dd>{{ selected.retention_expires_at ? displayTime(selected.retention_expires_at) : '运行中不清理；结束后计算保留期' }}</dd></div>
           </dl>
           <p v-if="startBlocked" role="alert" class="form-error">{{ storageWarning }}</p>
+          <section data-testid="severity-panel" aria-label="业务影响评估">
+            <h3>严重程度 · 业务影响</h3>
+            <p>{{ humanPrecedence(selected) ? '当前人工等级' : '当前等级' }}：{{ selected.severity }}</p>
+            <p>高：核心业务不可用或大范围用户无法完成关键操作；中：部分受损或明显变慢但有替代路径；低：局部轻微且不妨碍关键业务；未评估：影响信息不足。</p>
+            <p>未评估不等于低风险；原因不明不降级，严重程度独立于根因可信度、核验状态和优先级。</p>
+            <p v-if="selected.severity_assessed_at">评估时间：{{ displayTime(selected.severity_assessed_at) }}。保留等级不等于已验证当前影响；历史影响未验证当前。</p>
+            <form @submit.prevent="saveSeverity()">
+              <label>业务影响 <select v-model="impactForm.business" aria-label="业务影响"><option v-for="value in ['insufficient', 'core_unavailable', 'key_operations_blocked', 'partial_or_slow', 'local_minor']" :key="value" :value="value">{{ impactLabels[value] }}</option></select></label>
+              <label>用户范围 <select v-model="impactForm.users" aria-label="用户范围"><option v-for="value in ['unknown', 'broad', 'partial', 'local']" :key="value" :value="value">{{ impactLabels[value] }}</option></select></label>
+              <label>持续情况 <select v-model="impactForm.duration" aria-label="持续情况"><option v-for="value in ['unknown', 'ongoing', 'intermittent', 'ended']" :key="value" :value="value">{{ impactLabels[value] }}</option></select></label>
+              <label>替代路径 <select v-model="impactForm.alternative" aria-label="替代路径"><option v-for="value in ['unknown', 'available', 'none', 'not_needed']" :key="value" :value="value">{{ impactLabels[value] }}</option></select></label>
+              <button type="submit" :disabled="severityBusy">保存人工评估</button>
+            </form>
+            <p>仅接受受控定性依据，不接收自由文本或敏感原文；不符合分级依据时为未评估，不自设量化阈值。</p>
+            <p v-if="severityError" role="alert">{{ severityError }}</p>
+            <article v-for="suggestion in selected.severity_suggestions" :key="suggestion.id">
+              <p>{{ suggestion.status === 'pending' ? '待确认建议' : suggestion.status === 'applied' ? '已应用建议' : '已过时建议' }}：{{ suggestion.severity }} · Agent受控建议 #{{ suggestion.sequence }} · {{ displayTime(suggestion.assessed_at) }}</p>
+              <p>依据：{{ impactLabels[suggestion.basis.business] }}；{{ impactLabels[suggestion.basis.users] }}；{{ impactLabels[suggestion.basis.duration] }}；{{ impactLabels[suggestion.basis.alternative] }}</p>
+              <button v-if="suggestion.status === 'pending'" :disabled="severityBusy" @click="saveSeverity(suggestion)">确认应用建议</button>
+            </article>
+            <details><summary>严重程度完整历史（{{ selected.severity_history.length }}）</summary>
+              <article v-for="event in selected.severity_history" :key="event.id">
+                <p>#{{ event.sequence }} · {{ event.source === 'human' ? '人工' : 'Agent受控评估' }} · {{ event.kind === 'suggestion' ? '建议（非当前决定）' : '决定' }} · {{ event.severity }} · {{ displayTime(event.assessed_at) }}</p>
+                <p>依据：{{ impactLabels[event.basis.business] }}；{{ impactLabels[event.basis.users] }}；{{ impactLabels[event.basis.duration] }}；{{ impactLabels[event.basis.alternative] }}</p>
+              </article>
+              <p v-if="!selected.severity_history.length">无已记录评估历史；升级前预留等级保留，不虚构来源依据。</p>
+            </details>
+          </section>
           <h3>调查尝试</h3>
           <template v-if="selected.attempts.length">
             <nav aria-label="逐轮导航"><el-button v-for="attempt in selected.attempts" :key="attempt.id" @click="locateAttempt(attempt.id)">第{{ attempt.attempt_number }}轮 · {{ attempt.status }}</el-button></nav>

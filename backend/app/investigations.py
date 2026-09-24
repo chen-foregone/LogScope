@@ -6,7 +6,7 @@ from typing import Annotated, Literal
 from fastapi import APIRouter, Header, HTTPException, Response
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import Column, DateTime, MetaData, String, Table, Uuid, cast, or_, select
+from sqlalchemy import Column, DateTime, MetaData, String, Table, Uuid, Integer, cast, or_, select
 
 metadata = MetaData()
 investigations = Table(
@@ -15,6 +15,7 @@ investigations = Table(
     Column("request_key", Uuid, unique=True),
     Column("severity", String(20)), Column("severity_source", String(20)),
     Column("severity_assessed_at", DateTime(timezone=True)),
+    Column("severity_version", Integer),
     Column("title", String(200), nullable=False),
     Column("description", String(4000), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
@@ -44,6 +45,9 @@ class InvestigationView(BaseModel):
     severity: Literal["未评估", "高", "中", "低"]
     severity_source: Literal['human', 'agent'] | None
     severity_assessed_at: datetime | None
+    severity_version: int
+    severity_history: list[dict]
+    severity_suggestions: list[dict]
     service: str | None
     attempts: list[dict]
     evidence_count: int

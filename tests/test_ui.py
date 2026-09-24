@@ -10,6 +10,63 @@ from playwright.sync_api import sync_playwright, expect
 BASE = os.environ.get("UI_BASE_URL", "http://127.0.0.1:5173")
 
 
+def test_severity_human_suggestion_confirmation_and_cross_round_ui(evidence_executor):
+    with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client, sync_playwright() as p:
+        record = client.post('/api/investigations', json={'title': '人工等级-' + uuid4().hex[:8]},
+                             headers={'Idempotency-Key': str(uuid4())}).json()
+        path = '/api/investigations/' + record['id']
+        browser = p.chromium.launch(headless=True)
+        try:
+            page = browser.new_page()
+            page.goto(BASE + '/#/investigations/' + record['id'])
+            panel = page.locator('[data-testid="severity-panel"]')
+            expect(panel).to_contain_text('未评估不等于低风险')
+            panel.get_by_label('业务影响', exact=True).select_option('core_unavailable')
+            panel.get_by_label('用户范围').select_option('broad')
+            panel.get_by_label('持续情况').select_option('ongoing')
+            panel.get_by_label('替代路径').select_option('none')
+            page.get_by_role('button', name='保存人工评估', exact=True).click()
+            expect(panel).to_contain_text('当前人工等级：高')
+            before = client.get(path).json()
+            scope = {'service_id': 'orders'}
+            running = client.post(path + '/attempts', json=scope, headers={'Idempotency-Key': str(uuid4())}).json()
+            attempt_id = running['attempts'][-1]['id']
+            base = '/api/executor/investigations/' + record['id'] + '/attempts/' + attempt_id + '/executions'
+            execution_id = client.get(base, headers=evidence_executor).json()['executions'][0]['id']
+            payload = {'expected_version': 1, 'basis': {'format': 'controlled-impact-v1', 'business': 'partial_or_slow',
+                       'users': 'partial', 'duration': 'ongoing', 'alternative': 'available'}}
+            endpoint = base + '/' + execution_id + '/severity'
+            assert client.post(endpoint, json=payload, headers={**evidence_executor, 'Idempotency-Key': str(uuid4())}).status_code == 201
+            page.reload()
+            expect(panel).to_contain_text('历史影响未验证当前')
+            expect(panel).to_contain_text('当前人工等级：高')
+            expect(panel).to_contain_text('待确认建议：中')
+            assert client.get(path).json()['severity_assessed_at'] == before['severity_assessed_at']
+            page.get_by_role('button', name='确认应用建议', exact=True).click()
+            expect(panel).to_contain_text('当前人工等级：中')
+            assert client.get(path).json()['severity_version'] == 2
+            payload['expected_version'] = 2
+            assert client.post(endpoint, json=payload, headers={**evidence_executor, 'Idempotency-Key': str(uuid4())}).status_code == 201
+            page.reload()
+            panel.get_by_label('业务影响', exact=True).select_option('core_unavailable')
+            page.get_by_role('button', name='保存人工评估', exact=True).click()
+            expect(panel).to_contain_text('已过时建议：中')
+            expect(panel.get_by_role('button', name='确认应用建议', exact=True)).to_have_count(0)
+            assert client.post(path + '/attempts/' + attempt_id + '/cancel').status_code == 200
+            client.post(path + '/attempts', json=scope, headers={'Idempotency-Key': str(uuid4())})
+            after = client.get(path).json()
+            page.reload()
+            expect(panel).to_contain_text('当前人工等级：高')
+            expect(panel).to_contain_text('历史影响未验证当前')
+            assert client.get(path).json() == after
+            panel.get_by_label('业务影响', exact=True).select_option('insufficient')
+            page.get_by_role('button', name='保存人工评估', exact=True).click()
+            expect(panel).to_contain_text('当前人工等级：未评估')
+            expect(panel).to_contain_text('未评估不等于低风险')
+        finally:
+            browser.close()
+
+
 @pytest.mark.parametrize('reacquire', [False, True])
 def test_history_reference_ui_preserves_material_and_shows_rejection(evidence_executor, reacquire):
     from sys import path as pythonpath
