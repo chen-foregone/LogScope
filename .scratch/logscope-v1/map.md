@@ -24,8 +24,6 @@
 
 - [13：证据失效与新轮重新核验](issues/13-revalidate-expired-evidence.md) 功能/schema/API/UI及双轴审查已完成，保留claimed待最终全量；仅13快照专项7项与类型构建通过，Chromium主流程通过。完整快照216项通过后测试PG共享内存耗尽并恢复中，余214环境错误，未宣称全绿。
 
-- [13：证据失效与新轮重新核验](issues/13-revalidate-expired-evidence.md) 功能/schema/API/UI及双轴审查已完成，保留claimed待最终全量；仅13快照专项7项与类型构建通过，Chromium主流程通过。完整快照216项通过后测试PG共享内存耗尽并恢复中，余214环境错误，未宣称全绿。
-
 ## Fog
 
 - 统一筛选15已实现但最终全量验收待共享PG恢复；完整保留16由并行任务处理。跨主机/Linux/任意Agent的真实退出协议不在10的本机证明范围。
