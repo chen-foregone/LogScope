@@ -75,7 +75,7 @@ def cancellation_router(engine, clock):
                             connection.commit()
                             raise
                 parent = connection.execute(select(investigations).where(investigations.c.id == investigation_id)).mappings().one()
-                result = current_view(connection, parent)
+                result = current_view(connection, parent, clock())
             return result
         except HTTPException:
             raise

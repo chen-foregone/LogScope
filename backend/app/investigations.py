@@ -11,6 +11,8 @@ from sqlalchemy import Column, DateTime, MetaData, String, Table, Uuid, Integer,
 from app.investigation_listing import (InvestigationPageQuery, InvestigationFilterQuery, InvestigationPage,
     InvestigationOverviewResponse, read_investigation_listing)
 
+from app.retention import RetentionView
+
 metadata = MetaData()
 investigations = Table(
     "investigations", metadata,
@@ -23,7 +25,7 @@ investigations = Table(
     Column("description", String(4000), nullable=False),
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
-    Column("retention_expires_at", DateTime(timezone=True), nullable=False),
+    Column("retention_expires_at", DateTime(timezone=True), nullable=True),
 )
 
 
@@ -57,6 +59,7 @@ class InvestigationView(BaseModel):
     created_at: datetime
     updated_at: datetime
     retention_expires_at: datetime | None
+    retention: RetentionView
 
 
 class InvestigationList(BaseModel):
@@ -99,7 +102,7 @@ def investigation_router(engine, clock):
                 if any(row[key] != value for key, value in payload.model_dump().items()):
                     raise HTTPException(409, "请求标识已用于不同创建内容")
                 response.status_code = 200
-            result = current_view(connection, row)
+            result = current_view(connection, row, clock())
         return result
 
     @router.get("", response_model=InvestigationPage)
@@ -117,7 +120,7 @@ def investigation_router(engine, clock):
             row = connection.execute(select(investigations).where(investigations.c.id == investigation_id)).mappings().first()
             if row is None:
                 raise HTTPException(404, "调查不存在")
-            result = current_view(connection, row)
+            result = current_view(connection, row, clock())
         return result
 
     return router

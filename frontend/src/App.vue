@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
+import RetentionStatus from './components/RetentionStatus.vue'
 import InvestigationListPanel from './components/InvestigationListPanel.vue'
 import { useInvestigationList } from './composables/useInvestigationList'
 import { Plus, ShieldCheck, TerminalSquare, Command } from 'lucide-vue-next'
@@ -113,6 +114,7 @@ type Investigation = {
   created_at: string
   updated_at: string
   retention_expires_at: string | null
+  retention: { phase: 'running' | 'retained' | 'expiring' | 'awaiting_cleanup' | 'inconsistent'; issue: string | null }
 }
 const services = ref<{ id: string; name: string }[]>([])
 const serviceId = ref('')
@@ -466,8 +468,8 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
             <div><dt>证据</dt><dd>证据条数：{{ selected.evidence_count }}</dd></div>
             <div><dt>创建时间</dt><dd>{{ displayTime(selected.created_at) }}</dd></div>
             <div><dt>最后更新时间</dt><dd>{{ displayTime(selected.updated_at) }}</dd></div>
-            <div><dt>保留至</dt><dd>{{ selected.retention_expires_at ? displayTime(selected.retention_expires_at) : '运行中不清理；结束后计算保留期' }}</dd></div>
           </dl>
+          <RetentionStatus :retention="selected.retention" :expires-at="selected.retention_expires_at" />
           <p v-if="startBlocked" role="alert" class="form-error">{{ storageWarning }}</p>
           <section data-testid="severity-panel" aria-label="业务影响评估">
             <h3>严重程度 · 业务影响</h3>

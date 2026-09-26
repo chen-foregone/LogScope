@@ -102,7 +102,7 @@ def interruption_router(engine, credential, clock):
                 if row['status'] == '调查中' and row['lost_requested_at'] is None:
                     isolate_lost(connection, row, execution_id, clock)
                 parent = connection.execute(select(investigations).where(investigations.c.id == investigation_id)).mappings().one()
-                result = current_view(connection, parent)
+                result = current_view(connection, parent, clock())
             return result
         except HTTPException:
             raise

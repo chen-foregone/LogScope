@@ -99,11 +99,13 @@ def attempt_views(connection, investigation_id):
     return views
 
 
-def current_view(connection, row):
+def current_view(connection, row, now):
     from app.severity import severity_view
+    from app.retention import retention_view
     views = attempt_views(connection, row['id'])
     history, suggestions = severity_view(connection, row['id'], row['severity_version'], views[-1] if views else None)
-    return representation(row, views) | {'severity_history': history, 'severity_suggestions': suggestions}
+    return representation(row, views) | {'severity_history': history, 'severity_suggestions': suggestions,
+                                        'retention': retention_view(row, views, now).model_dump()}
 
 
 class ControlledExecutionAdapter:
@@ -143,7 +145,7 @@ def attempt_router(engine, services, adapter, clock):
                 if replay["request_body"] != body:
                     raise HTTPException(409, "启动请求标识已用于不同范围")
                 response.status_code = 200
-                return current_view(connection, row)
+                return current_view(connection, row, clock())
             if connection.execute(select(attempts.c.id).where(
                     attempts.c.investigation_id == investigation_id, attempts.c.status == "调查中")).first():
                 raise HTTPException(409, "已有调查中轮次，不能修改服务或范围，也不能重复启动")
@@ -194,7 +196,7 @@ def attempt_router(engine, services, adapter, clock):
             row = connection.execute(update(investigations).where(investigations.c.id == investigation_id)
                                      .values(updated_at=now, retention_expires_at=None)
                                      .returning(investigations)).mappings().one()
-            result = current_view(connection, row)
+            result = current_view(connection, row, clock())
         return result
 
     @router.get("/{investigation_id}/attempts/{attempt_id}")
