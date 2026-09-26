@@ -55,7 +55,7 @@ def test_replay_is_atomic_and_conflicting_payload_leaves_no_record(database_url)
         assert all(reply.json() == record for reply in replies)
         conflict = client.post("/api/investigations", json={"title": "不同调查"}, headers={"Idempotency-Key": key})
         assert conflict.status_code == 409
-        assert client.get("/api/investigations").json() == {"items": [record], "total": 1}
+        assert_listing(client.get("/api/investigations"), [record])
     with client_for(database_url) as restarted:
         replay = restarted.post("/api/investigations", json={"title": "重放调查", "description": ""}, headers={"Idempotency-Key": key})
         assert replay.status_code == 200
@@ -71,12 +71,12 @@ def test_invalid_inputs_and_missing_identity_leave_no_records(database_url):
                         {"title": "x", "status": "调查中"}, {"title": "x\u0000y"}):
             reply = client.post("/api/investigations", json=payload, headers=headers)
             assert reply.status_code == 422, reply.text
-            assert client.get("/api/investigations").json() == {"items": [], "total": 0}
+            assert_listing(client.get("/api/investigations"), [])
         for payload in ({"title": "\ud800"}, {"title": "x", "description": "\udfff"}):
             reply = client.post("/api/investigations", content=json.dumps(payload),
                                 headers={**headers, "Content-Type": "application/json"})
             assert reply.status_code == 422
-            assert client.get("/api/investigations").json() == {"items": [], "total": 0}
+            assert_listing(client.get("/api/investigations"), [])
         assert client.post("/api/investigations", json={"title": "x"}).status_code == 422
         assert client.post("/api/investigations", json={"title": "x"}, headers={"Idempotency-Key": "bad"}).status_code == 422
         assert client.get("/api/investigations").json()["total"] == 0
@@ -89,10 +89,10 @@ def test_basic_search_reads_facts_without_touching_times(database_url):
     with client_for(database_url) as client:
         records = [client.post("/api/investigations", json={"title": title}, headers={"Idempotency-Key": str(uuid4())}).json()
                    for title in ("Alpha 超时", "Beta 错误")]
-        assert client.get("/api/investigations", params={"q": " ALPHA "}).json() == {"items": [records[0]], "total": 1}
-        assert client.get("/api/investigations", params={"q": "%"}).json() == {"items": [], "total": 0}
-        assert client.get("/api/investigations", params={"q": records[1]["id"]}).json()["items"] == [records[1]]
-        assert client.get("/api/investigations").json()["items"] == list(reversed(records))
+        assert_listing(client.get("/api/investigations", params={"q": " ALPHA "}), [records[0]])
+        assert_listing(client.get("/api/investigations", params={"q": "%"}), [])
+        assert client.get("/api/investigations", params={"q": records[1]["id"]}).json()["items"] == [summary(records[1])]
+        assert client.get("/api/investigations").json()["items"] == [summary(record) for record in reversed(records)]
         for record in records:
             assert client.get(f'/api/investigations/{record["id"]}').json() == record
 
@@ -136,7 +136,7 @@ def test_record_survives_real_server_process_restart(database_url):
         record = response.json()
     with server() as restarted:
         assert restarted.get(f'/api/investigations/{record["id"]}').json() == record
-        assert restarted.get("/api/investigations").json() == {"items": [record], "total": 1}
+        assert_listing(restarted.get("/api/investigations"), [record])
 
 
 def test_create_pending_survives_new_application(database_url):
@@ -158,5 +158,22 @@ def test_create_pending_survives_new_application(database_url):
     with client_for(database_url) as restarted:
         assert restarted.get(f'/api/investigations/{record["id"]}').json() == record
         listing = restarted.get("/api/investigations").json()
-        assert listing == {"items": [record], "total": 1}
+        assert listing["items"] == [summary(record)]
+        assert listing["total"] == 1
         assert restarted.get(f'/api/investigations/{record["id"]}').json() == record
+
+
+def summary(record):
+    result = {key: record[key] for key in ('id', 'title', 'service', 'status', 'severity',
+              'evidence_count', 'created_at', 'updated_at')}
+    latest = record['attempts'][-1] if record['attempts'] else None
+    result['possible_duplicate_evidence'] = bool(latest and any(
+        notice.startswith('可能重复') for notice in latest['evidence_notices']))
+    return result
+
+
+def assert_listing(response, records):
+    assert response.status_code == 200
+    body = response.json()
+    assert body['items'] == [summary(record) for record in records]
+    assert body['total'] == len(records)

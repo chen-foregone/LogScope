@@ -1,5 +1,7 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import InvestigationListPanel from './components/InvestigationListPanel.vue'
+import { useInvestigationList } from './composables/useInvestigationList'
 import { Plus, ShieldCheck, TerminalSquare, Command } from 'lucide-vue-next'
 
 type Evidence = {
@@ -225,9 +227,13 @@ function clearStart(id: string, pending: PendingStart) {
   }
 }
 
-const investigations = ref<Investigation[]>([])
+const listing = useInvestigationList()
+const { draft: listDraft, data: listData, busy: listBusy, error: listError } = listing
+const investigations = computed(() => listData.value?.items ?? [])
+const directoryError = ref(false)
+let listHash = location.hash.startsWith('#/?') ? location.hash : '#/'
+let listInitialized = false
 const selected = ref<Investigation | null>(null)
-const searchQuery = ref('')
 const loading = ref(false)
 const error = ref('')
 const creating = ref(false)
@@ -274,12 +280,13 @@ async function loadPage() {
   try {
     const id = location.hash.match(/^#\/investigations\/([a-f0-9-]+)$/i)?.[1]?.toLowerCase()
     if (id) {
+      listing.invalidate()
       restoreStart(id)
       const record = await request<Investigation>(`/${id}`)
       if (sequence === readSequence) selected.value = record
     } else {
-      const result = await request<{ items: Investigation[]; total: number }>(`?q=${encodeURIComponent(searchQuery.value)}`)
-      if (sequence === readSequence) investigations.value = result.items
+      if (!listInitialized) { listInitialized = true; listing.initialize() }
+      else listing.revalidate()
     }
   } catch (cause) {
     if (sequence === readSequence) error.value = cause instanceof Error ? cause.message : '请求失败'
@@ -293,7 +300,9 @@ async function loadServices() {
     const response = await fetch('/api/services')
     if (!response.ok) throw new Error('服务目录读取失败')
     services.value = (await response.json()).items
+    directoryError.value = false
   } catch {
+    directoryError.value = true
     startError.value = '服务目录读取失败，无法启动；请刷新重试'
   }
 }
@@ -353,11 +362,13 @@ async function startInvestigation() {
 }
 
 function openDetail(id: string) {
+  if (!location.hash.startsWith('#/investigations/')) listHash = location.hash || '#/'
+  listing.invalidate()
   location.hash = `/investigations/${id}`
 }
 
 function backToList() {
-  location.hash = '/'
+  location.hash = listHash
 }
 
 function openCreate() {
@@ -560,19 +571,7 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
             <p class="page-subtitle">无轮记录从创建起保留 30 天；查看不会延长期限。</p>
           </template>
         </section>
-        <section v-else-if="!error" class="investigation-section">
-          <div class="section-heading"><div><h2>调查记录</h2><p>按最后更新时间排序</p></div><el-button @click="loadPage">刷新列表</el-button></div>
-          <form class="table-toolbar" @submit.prevent="loadPage"><el-input v-model="searchQuery" placeholder="搜索调查标题或编号" clearable class="search-input" /><el-button native-type="submit">搜索</el-button></form>
-          <div class="table-wrap"><el-table :data="investigations" row-key="id" empty-text="没有匹配的调查记录">
-            <el-table-column label="调查" min-width="260"><template #default="{ row }"><button class="incident-title" @click="openDetail(row.id)">{{ row.title }}</button><div class="incident-id">{{ row.id }}</div></template></el-table-column>
-            <el-table-column label="服务" min-width="130"><template #default="{ row }">{{ row.service || '未选择服务' }}</template></el-table-column>
-            <el-table-column prop="severity" label="严重程度" width="100" />
-            <el-table-column prop="status" label="状态" width="100" />
-            <el-table-column label="证据条数" width="140"><template #default="{ row }">{{ row.evidence_count }}<div v-if="row.attempts.at(-1)?.evidence_notices.some((notice: string) => notice.startsWith('可能重复'))" class="incident-id">可能重复</div></template></el-table-column>
-            <el-table-column label="最后更新时间" min-width="240"><template #default="{ row }">{{ displayTime(row.updated_at) }}</template></el-table-column>
-          </el-table></div>
-          <div class="table-footer">显示 {{ investigations.length }} 条调查记录</div>
-        </section>
+        <InvestigationListPanel v-else-if="!error" v-model:draft="listDraft" :data="listData" :busy="listBusy" :error="listError" :services="services" :directory-error="directoryError" @apply="listing.apply()" @refresh="listing.refresh()" @page="listing.page" @open="openDetail" />
         <el-button v-if="error" @click="loadPage">重试读取</el-button>
         <footer class="page-footer"><span>LogScope</span><span>创建记录不启动调查 · 未评估不表示低风险</span></footer>
       </div>
