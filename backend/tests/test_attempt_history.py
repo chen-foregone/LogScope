@@ -1,3 +1,4 @@
+from test_investigations import summary, assert_listing
 from datetime import datetime, timedelta, timezone
 from uuid import uuid4
 
@@ -139,7 +140,7 @@ def test_query_failure_reopens_with_adjusted_service_and_isolated_identity(datab
         assert ended['retention_expires_at'] == '2026-12-04T01:01:00Z'
         assert ended['updated_at'] == '2026-11-04T01:01:00Z'
         assert ended['attempts'][0] == before['attempts'][0]
-        assert client.get('/api/investigations').json()['items'] == [ended]
+        assert client.get('/api/investigations').json()['items'] == [summary(ended)]
 
 
 def test_concurrent_reopen_and_failed_acceptance_leave_one_new_round(database_url, tmp_path):

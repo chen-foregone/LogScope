@@ -21,7 +21,9 @@ def evidence_executor(tmp_path_factory, request):
     from sqlalchemy.engine import make_url
     parsed = make_url(database)
     assert parsed.host == '127.0.0.1' and parsed.port == 55433, 'UI只允许隔离PG17端口55433'
-    for port in (8000, 5173):
+    api_port = int(os.environ.get('UI_API_PORT', '8000'))
+    ui_port = int(os.environ.get('UI_PORT', '5173'))
+    for port in (api_port, ui_port):
         deadline = time.monotonic() + 10
         while True:
             with socket.socket() as probe:
@@ -37,7 +39,7 @@ def evidence_executor(tmp_path_factory, request):
     credential = secrets.token_urlsafe(32)
     env = {**os.environ, 'DATABASE_URL': database + '?options=-csearch_path%3D' + schema,
            'PYTHONPATH': str(ROOT / 'backend'), 'SERVICES_FILE': str(ROOT / 'backend/services.example.json'),
-           'EXECUTOR_CREDENTIAL': credential, 'NO_PROXY': '127.0.0.1,localhost', 'no_proxy': '127.0.0.1,localhost'}
+           'EXECUTOR_CREDENTIAL': credential, 'UI_API_TARGET': f'http://127.0.0.1:{api_port}', 'NO_PROXY': '127.0.0.1,localhost', 'no_proxy': '127.0.0.1,localhost'}
     legacy_mode = getattr(request, 'param', None)
     legacy = legacy_mode in ('legacy_history', 'legacy_narrow')
     migration = subprocess.run([sys.executable, '-m', 'alembic', '-c', 'backend/alembic.ini', 'upgrade', '0013' if legacy else 'head'],
@@ -85,19 +87,21 @@ class DeadlineSource(CancelSource):
         global shift
         shift += timedelta(minutes=10)
         await super().query(**scope)
-uvicorn.run(create_app(clock=clock, query_sources={'ui-limited': Limited(), 'ui-healthy': Healthy(), 'ui-cancel': CancelSource(), 'ui-deadline': DeadlineSource()}), host='127.0.0.1', port=8000, access_log=False)
+uvicorn.run(create_app(clock=clock, query_sources={'ui-limited': Limited(), 'ui-healthy': Healthy(), 'ui-cancel': CancelSource(), 'ui-deadline': DeadlineSource()}), host='127.0.0.1', port=UI_API_PORT, access_log=False)
 '''
+        startup = startup.replace('port=UI_API_PORT', f'port={api_port}')
         processes.append(subprocess.Popen([sys.executable, '-c', startup],
                                          cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
-        processes.append(subprocess.Popen(['node', 'node_modules/vite/bin/vite.js', '--host', '127.0.0.1',
-                                          '--port', '5173', '--strictPort'], cwd=ROOT, env=env,
+        processes.append(subprocess.Popen(['node', 'node_modules/vite/bin/vite.js',
+                                          *(['preview'] if os.environ.get('UI_PREVIEW') == '1' else []), '--host', '127.0.0.1',
+                                          '--port', str(ui_port), '--strictPort'], cwd=ROOT, env=env,
                                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))
         with httpx.Client(timeout=2, trust_env=False) as client:
             deadline = time.monotonic() + 30
             while True:
                 assert all(process.poll() is None for process in processes), 'UI的API/Vite进程启动失败'
                 try:
-                    services = client.get('http://127.0.0.1:5173/api/services')
+                    services = client.get(f'http://127.0.0.1:{ui_port}/api/services')
                     if services.status_code == 200 and services.json()['items'][0]['id'] == 'orders':
                         break
                 except (httpx.TransportError, ValueError, KeyError, IndexError):

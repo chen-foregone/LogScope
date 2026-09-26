@@ -1,3 +1,4 @@
+from test_investigations import summary, assert_listing
 from datetime import datetime, timezone
 from uuid import uuid4
 
@@ -52,7 +53,7 @@ def test_default_range_is_fixed_and_current_projection_survives_restart(database
         assert replay.json() == record
     with configured_client(database_url, tmp_path) as restarted:
         assert restarted.get(path).json() == record
-        assert restarted.get("/api/investigations").json() == {"items": [record], "total": 1}
+        assert_listing(restarted.get("/api/investigations"), [record])
 
 
 @pytest.mark.parametrize('listing', [False, True], ids=['detail', 'listing'])
@@ -70,7 +71,7 @@ def test_read_projection_keeps_one_snapshot_during_concurrent_start(database_url
 
         def pause_after_investigation_read(connection, cursor, statement, parameters, context, executemany):
             # 测试DB设施只控制连接时序，不替换SQL结果、不在生产代码插入hook。
-            if (not investigation_read.is_set() and statement.lstrip().startswith('SELECT investigations.')
+            if (not investigation_read.is_set() and (statement.lstrip().startswith('SELECT investigations.') or statement.lstrip().startswith('WITH matched_investigations AS'))
                     and 'FOR UPDATE' not in statement):
                 investigation_read.set()
                 assert resume_read.wait(15), '并发启动未及时释放读取连接'
@@ -94,9 +95,9 @@ def test_read_projection_keeps_one_snapshot_during_concurrent_start(database_url
         assert reply.status_code == 200
         observed = reply.json()['items'][0] if listing else reply.json()
         # 读取已在启动提交之前取得快照，不能混合旧保留期/更新时间与新轮次。
-        assert observed == pending
+        assert observed == (summary(pending) if listing else pending)
         assert client.get(path).json() == started
-        assert client.get('/api/investigations').json() == {'items': [started], 'total': 1}
+        assert_listing(client.get('/api/investigations'), [started])
 
 
 @pytest.mark.parametrize('start_first', [False, True], ids=['replay-first', 'start-first'])
@@ -124,7 +125,7 @@ def test_create_replay_keeps_consistent_projection_during_start(database_url, tm
                 assert resume_start.wait(15), '启动事务未及时释放'
 
     def before_query(connection, cursor, statement, parameters, context, executemany):
-        if statement.lstrip().startswith('SELECT investigations.'):
+        if (statement.lstrip().startswith('SELECT investigations.') or statement.lstrip().startswith('WITH matched_investigations AS')):
             if 'WHERE investigations.request_key =' in statement:
                 pids['replay'] = connection.connection.driver_connection.info.backend_pid
                 replay_query.set()
@@ -134,7 +135,7 @@ def test_create_replay_keeps_consistent_projection_during_start(database_url, tm
 
     def after_query(connection, cursor, statement, parameters, context, executemany):
         if (not start_first and not investigation_read.is_set()
-                and statement.lstrip().startswith('SELECT investigations.')
+                and (statement.lstrip().startswith('SELECT investigations.') or statement.lstrip().startswith('WITH matched_investigations AS'))
                 and 'WHERE investigations.request_key =' in statement):
             investigation_read.set()
             assert resume_replay.wait(15), '创建重放未及时释放'
@@ -197,7 +198,7 @@ def test_create_replay_keeps_consistent_projection_during_start(database_url, tm
         assert started['retention_expires_at'] is None
         assert started['updated_at'] > pending['updated_at']
         assert client.get(path).json() == started
-        assert client.get('/api/investigations').json() == {'items': [started], 'total': 1}
+        assert_listing(client.get('/api/investigations'), [started])
         assert replay().json() == started
 
 
@@ -548,7 +549,7 @@ def test_capacity_competition_across_real_business_processes(database_url, tmp_p
         assert sorted(reply.status_code for reply in replies) == [201, 201, 201, 409, 409, 409, 409, 409]
         observed = clients[0].get('/api/investigations').json()['items']
         assert sum(record['status'] == '调查中' for record in observed) == 3
-        assert all(len(record['attempts']) == (record['status'] == '调查中') for record in observed)
+        assert all(len(clients[0].get('/api/investigations/' + record['id']).json()['attempts']) == (record['status'] == '调查中') for record in observed)
         for i, reply in enumerate(replies):
             if reply.status_code == 409:
                 assert clients[1].get(f'/api/investigations/{records[i]["id"]}').json() == records[i]

@@ -1,3 +1,4 @@
+from test_investigations import summary, assert_listing
 import json
 import pytest
 from datetime import datetime, timedelta, timezone
@@ -35,7 +36,7 @@ def test_finish_without_evidence_is_completed_not_root_cause(database_url, tmp_p
         expires = datetime.fromisoformat(after['retention_expires_at'].replace('Z', '+00:00'))
         assert expires == ended + timedelta(days=30)
         assert client.get(path).json() == after
-        assert client.get('/api/investigations').json()['items'] == [after]
+        assert client.get('/api/investigations').json()['items'] == [summary(after)]
         repeated = client.post(endpoint, json=proposal(), headers=headers)
         assert repeated.status_code == 200
         assert repeated.json() == reply.json()
@@ -336,7 +337,7 @@ def test_read_snapshot_during_finish(database_url, tmp_path, listing):
         path, before, evidence_endpoint, auth = started(client, credential)
         endpoint = evidence_endpoint.removesuffix('/evidence') + '/conclusions'
         def pause(connection, cursor, statement, parameters, context, executemany):
-            if not paused.is_set() and statement.startswith('SELECT investigations.') and 'FOR UPDATE' not in statement:
+            if not paused.is_set() and (statement.startswith('SELECT investigations.') or statement.startswith('WITH matched_investigations AS')) and 'FOR UPDATE' not in statement:
                 paused.set()
                 assert resume.wait(15)
         event.listen(Engine, 'after_cursor_execute', pause)
@@ -352,7 +353,7 @@ def test_read_snapshot_during_finish(database_url, tmp_path, listing):
         finally:
             resume.set()
             event.remove(Engine, 'after_cursor_execute', pause)
-        assert (reply.json()['items'][0] if listing else reply.json()) == before
+        assert (reply.json()['items'][0] if listing else reply.json()) == (summary(before) if listing else before)
         assert client.get(path).json()['status'] == '已完成'
 
 
