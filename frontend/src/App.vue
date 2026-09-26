@@ -1,20 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref } from 'vue'
-import InvestigationListPanel from './components/InvestigationListPanel.vue'
-import { useInvestigationList } from './composables/useInvestigationList'
+import { onMounted, onUnmounted, ref } from 'vue'
 import { Plus, ShieldCheck, TerminalSquare, Command } from 'lucide-vue-next'
 
 type Evidence = {
   id: string; source: string; occurred_at: string
   query: { starts_at: string; ends_at: string; fields: Record<string, string> }
-  snippet: { event: string; error_code: string; fields: Record<string, string> }
+  snippet: { event: string; error_code: string; fields: Record<string, string> } | null
   locator: string | null; redaction_note: string
   source_attempt_id: string; source_attempt_number: number; verification: string
+  source_access?: string; verification_history?: { version: number; reason: string; created_at: string; material_status: string }[]
 }
 type Conclusion = {
   id: string; version: number; created_at: string; kind: 'hypothesis' | 'confirmed' | 'undetermined'
   verification: string; mechanism: string | null; evidence_ids: string[]; missing: string[]; boundary: string
   phenomenon?: string; causal_chain?: string; alternatives?: string; contradictions?: string
+  verification_history?: { version: number; status: string; reason: string; created_at: string; attempt_id: string; evidence_ids: string[] }[]
 }
 type QuerySource = { source: string; state: string; attempts: number; reason: string | null; retry_after_seconds?: number | null; failures: { reason: string; attempt: number; wait_seconds: number | null }[] }
 type QueryRun = { id: string; status: string; sources: QuerySource[] }
@@ -22,6 +22,20 @@ const queryStates: Record<string, string> = { canceled: '已停止，结果不�
 const queryReasons: Record<string, string> = { network: '临时网络故障', timeout: '单次查询30秒超时', permission: '权限不足', credentials: '凭据无效', parameters: '查询参数无效', rate_limited: '来源限流', inflight: '来源已有在途查询，等待退出后再试', not_configured: '未配置受控查询适配器', adapter_error: '适配器能力或返回不符合受控契约' }
 const conclusionLabels = { hypothesis: '待验证假设', confirmed: '已确认根因', undetermined: '未确定根因' }
 const missingLabels: Record<string, string> = { causal_trace: '同调用因果传播轨迹', dependency_observation: '依赖调用观测', alternative_exclusion: '替代解释排除依据' }
+const verificationLabels: Record<string, string> = { supported_controlled_trace: '受控轨迹支持（非普遍证明）', pending_reverification: '待重新核验', insufficient: '证据不足' }
+const verificationReasons: Record<string, string> = { source_unreachable: '来源不可访问', source_reachable: '来源可访问', material_integrity_failed: '保留材料完整性核验失败', no_retained_material: '仅有定位，缺少可核验保留材料', insufficient_verifiable_causal_support: '缺少充分可核验因果支撑；不表示原结论错误', manual_round_sufficient_causal_support: '手动新轮获得充分可核验因果支撑', alternative_sufficient_causal_support: '原依据不可核验；其他充分可核验因果轨迹继续支撑，见核验依据' }
+const reverifyConclusionId = ref('')
+function prepareReverification(conclusion: Conclusion) {
+  if (!selected.value || pendingStart.value || starting.value || startBlocked.value || selected.value.attempts.some(attempt => attempt.status === '调查中')) return
+  const origin = selected.value.attempts.find(attempt => attempt.conclusions.some(item => item.id === conclusion.id))
+  if (!origin) return
+  reverifyConclusionId.value = conclusion.id
+  serviceId.value = origin.service_id
+  rangeMode.value = 'absolute'
+  startsAt.value = origin.starts_at
+  endsAt.value = origin.ends_at
+  document.getElementById('start-service')?.scrollIntoView({ block: 'center' })
+}
 function locateEvidence(attemptId: string, id: string) {
   document.getElementById(`evidence-${attemptId}-${id}`)?.scrollIntoView({ block: 'center' })
 }
@@ -171,7 +185,8 @@ function parseStart(saved: string): PendingStart {
   const payload = JSON.parse(pending.body)
   if (!payload || typeof payload !== 'object' || Array.isArray(payload) ||
     typeof payload.service_id !== 'string' || !payload.service_id.trim() || payload.service_id.length > 80 ||
-    Object.keys(payload).some(key => !['service_id', 'starts_at', 'ends_at'].includes(key))) throw new Error(storageWarning)
+    Object.keys(payload).some(key => !['service_id', 'starts_at', 'ends_at', 'reverify_conclusion_id'].includes(key)) ||
+    ('reverify_conclusion_id' in payload && (typeof payload.reverify_conclusion_id !== 'string' || !uuidPattern.test(payload.reverify_conclusion_id)))) throw new Error(storageWarning)
   if ('starts_at' in payload || 'ends_at' in payload) {
     const absolute = /^(\d{4})-(\d{2})-(\d{2})T([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d)(?:[.,](\d+))?)?([zZ]|([+-])([01]\d|2[0-3]):?([0-5]\d))$/
     const parseAbsolute = (value: unknown): bigint | null => {
@@ -205,6 +220,7 @@ function restoreStart(id: string) {
     startBlocked.value = true
   }
   const payload = pendingStart.value ? JSON.parse(pendingStart.value.body) : null
+  reverifyConclusionId.value = payload?.reverify_conclusion_id ?? ''
   serviceId.value = payload?.service_id ?? ''
   rangeMode.value = payload?.starts_at ? 'absolute' : 'recent'
   startsAt.value = payload?.starts_at ?? ''
@@ -227,13 +243,9 @@ function clearStart(id: string, pending: PendingStart) {
   }
 }
 
-const listing = useInvestigationList()
-const { draft: listDraft, data: listData, busy: listBusy, error: listError } = listing
-const investigations = computed(() => listData.value?.items ?? [])
-const directoryError = ref(false)
-let listHash = location.hash.startsWith('#/?') ? location.hash : '#/'
-let listInitialized = false
+const investigations = ref<Investigation[]>([])
 const selected = ref<Investigation | null>(null)
+const searchQuery = ref('')
 const loading = ref(false)
 const error = ref('')
 const creating = ref(false)
@@ -280,13 +292,12 @@ async function loadPage() {
   try {
     const id = location.hash.match(/^#\/investigations\/([a-f0-9-]+)$/i)?.[1]?.toLowerCase()
     if (id) {
-      listing.invalidate()
       restoreStart(id)
       const record = await request<Investigation>(`/${id}`)
       if (sequence === readSequence) selected.value = record
     } else {
-      if (!listInitialized) { listInitialized = true; listing.initialize() }
-      else listing.revalidate()
+      const result = await request<{ items: Investigation[]; total: number }>(`?q=${encodeURIComponent(searchQuery.value)}`)
+      if (sequence === readSequence) investigations.value = result.items
     }
   } catch (cause) {
     if (sequence === readSequence) error.value = cause instanceof Error ? cause.message : '请求失败'
@@ -300,9 +311,7 @@ async function loadServices() {
     const response = await fetch('/api/services')
     if (!response.ok) throw new Error('服务目录读取失败')
     services.value = (await response.json()).items
-    directoryError.value = false
   } catch {
-    directoryError.value = true
     startError.value = '服务目录读取失败，无法启动；请刷新重试'
   }
 }
@@ -314,7 +323,8 @@ async function startInvestigation() {
   const payload = rangeMode.value === 'recent' ? { service_id: serviceId.value } : {
     service_id: serviceId.value, starts_at: startsAt.value, ends_at: endsAt.value,
   }
-  const pending = pendingStart.value ?? { key: crypto.randomUUID(), body: JSON.stringify(payload) }
+  const pending = pendingStart.value ?? { key: crypto.randomUUID(), body: JSON.stringify({ ...payload,
+    ...(reverifyConclusionId.value ? { reverify_conclusion_id: reverifyConclusionId.value } : {}) }) }
   const route = location.hash
   const sequence = readSequence
   const isCurrent = () => sequence === readSequence && location.hash === route && selected.value?.id === id
@@ -362,13 +372,11 @@ async function startInvestigation() {
 }
 
 function openDetail(id: string) {
-  if (!location.hash.startsWith('#/investigations/')) listHash = location.hash || '#/'
-  listing.invalidate()
   location.hash = `/investigations/${id}`
 }
 
 function backToList() {
-  location.hash = listHash
+  location.hash = '/'
 }
 
 function openCreate() {
@@ -513,7 +521,14 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
               <p v-else>尚无结论。</p>
               <article v-for="conclusion in attempt.conclusions" :key="conclusion.id" aria-label="结论版本" class="evidence-card">
                 <h4>结论版本 {{ conclusion.version }} · {{ conclusionLabels[conclusion.kind] }}</h4>
-                <p>{{ displayTime(conclusion.created_at) }} · 核验状态：{{ conclusion.verification === 'supported_controlled_trace' ? '受控轨迹支持（非普遍证明）' : '证据不足' }}</p>
+                <p>{{ displayTime(conclusion.created_at) }} · 核验状态：{{ verificationLabels[conclusion.verification] }}</p>
+                <p v-if="conclusion.verification === 'pending_reverification'">保留原结论与结束状态；待重新核验不表示原结论错误，不自动重开，不影响严重程度。</p>
+                <el-button v-if="conclusion.verification === 'pending_reverification'" :disabled="starting || !!pendingStart || startBlocked || selected.attempts.some(item => item.status === '调查中')" @click="prepareReverification(conclusion)">准备手动新轮核验</el-button>
+                <article v-for="change in conclusion.verification_history" :key="change.version" aria-label="结论核验变化">
+                  <p>核验变化 {{ change.version }} · {{ verificationLabels[change.status] }} · {{ displayTime(change.created_at) }}</p>
+                  <p>{{ verificationReasons[change.reason] }}</p>
+                  <p v-for="id in change.evidence_ids" :key="id"><button @click="locateEvidence(change.attempt_id, id)">查看核验依据 {{ id }}</button></p>
+                </article>
                 <p v-if="conclusion.mechanism">候选机制：依赖错误传播导致请求失败</p>
                 <p v-if="conclusion.phenomenon">故障现象：{{ conclusion.phenomenon }}</p>
                 <p v-if="conclusion.causal_chain">因果机制：{{ conclusion.causal_chain }}</p>
@@ -534,6 +549,8 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
               <article v-for="item in attempt.evidence" :id="`evidence-${attempt.id}-${item.id}`" :key="item.id" aria-label="脱敏证据" class="evidence-card">
                 <p>来源轮次：第{{ item.source_attempt_number }}轮 <button @click="locateAttempt(item.source_attempt_id)">查看来源轮</button></p>
                 <p>{{ item.verification === 'retained_structured_material' ? '已保留受控脱敏结构化核验材料' : '不可核验：缺少最低核验材料' }}；代号定位不能直接打开原链接。</p>
+                <p>来源状态：{{ item.source_access === 'unreachable' ? '来源不可访问' : item.source_access === 'reachable' ? '来源可访问' : '尚未检查' }}；来源不可访问不自动等于证据不可核验。</p>
+                <p v-for="change in item.verification_history" :key="change.version">证据核验变化 {{ change.version }} · {{ displayTime(change.created_at) }} · {{ verificationReasons[change.reason] }}</p>
                 <template v-if="referenceTarget() && item.source_attempt_id === attempt.id && attempt.id !== referenceTarget()?.id">
                   <el-button :disabled="!!referencing || (!!historicalState(item.id)?.included_evidence_id && !!historicalState(item.id)?.reference_allowed)" @click="includeHistorical(item.id)">{{ historicalState(item.id)?.included_evidence_id && historicalState(item.id)?.reference_allowed ? '已纳入本轮' : '纳入本轮' }}</el-button>
                   <p v-if="historicalState(item.id)?.included_evidence_id && !historicalState(item.id)?.reference_allowed">本轮已等价纳入其他核验材料；此旧材料仍不符合引用条件，不能据此纳入。</p>
@@ -557,6 +574,8 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
             <p v-if="selected.attempts.length">历史轮次只读保留；新轮不自动继承历史证据、结论或查询覆盖，无累计次数上限。</p>
             <p role="status">实例最多同时运行3个调查，正在停止及正在确认执行状态仍占名额；满额不排队，未启动时请稍后手动重试。</p>
             <form @submit.prevent="startInvestigation">
+              <p v-if="reverifyConclusionId" role="status">本次关联原结论 {{ reverifyConclusionId }}；只读核验，不执行修复。只有充分可核验因果链才恢复确认。</p>
+              <el-button v-if="reverifyConclusionId && !pendingStart" :disabled="starting" @click="reverifyConclusionId = ''">取消核验关联</el-button>
               <p><label for="start-service">被调查服务</label> <select id="start-service" v-model="serviceId" :disabled="starting || !!pendingStart || startBlocked"><option value="">请选择已配置服务</option><option v-for="service in services" :key="service.id" :value="service.id">{{ service.name }}</option></select></p>
               <p v-if="!services.length">尚无可选服务，请由维护者配置后端服务目录。</p>
               <p><label for="range-mode">范围模式</label> <select id="range-mode" v-model="rangeMode" :disabled="starting || !!pendingStart || startBlocked"><option value="recent">最近1小时（启动时由服务器计算）</option><option value="absolute">绝对起止时间（最多24小时）</option></select></p>
@@ -571,7 +590,19 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
             <p class="page-subtitle">无轮记录从创建起保留 30 天；查看不会延长期限。</p>
           </template>
         </section>
-        <InvestigationListPanel v-else-if="!error" v-model:draft="listDraft" :data="listData" :busy="listBusy" :error="listError" :services="services" :directory-error="directoryError" @apply="listing.apply()" @refresh="listing.refresh()" @page="listing.page" @open="openDetail" />
+        <section v-else-if="!error" class="investigation-section">
+          <div class="section-heading"><div><h2>调查记录</h2><p>按最后更新时间排序</p></div><el-button @click="loadPage">刷新列表</el-button></div>
+          <form class="table-toolbar" @submit.prevent="loadPage"><el-input v-model="searchQuery" placeholder="搜索调查标题或编号" clearable class="search-input" /><el-button native-type="submit">搜索</el-button></form>
+          <div class="table-wrap"><el-table :data="investigations" row-key="id" empty-text="没有匹配的调查记录">
+            <el-table-column label="调查" min-width="260"><template #default="{ row }"><button class="incident-title" @click="openDetail(row.id)">{{ row.title }}</button><div class="incident-id">{{ row.id }}</div></template></el-table-column>
+            <el-table-column label="服务" min-width="130"><template #default="{ row }">{{ row.service || '未选择服务' }}</template></el-table-column>
+            <el-table-column prop="severity" label="严重程度" width="100" />
+            <el-table-column prop="status" label="状态" width="100" />
+            <el-table-column label="证据条数" width="140"><template #default="{ row }">{{ row.evidence_count }}<div v-if="row.attempts.at(-1)?.evidence_notices.some((notice: string) => notice.startsWith('可能重复'))" class="incident-id">可能重复</div></template></el-table-column>
+            <el-table-column label="最后更新时间" min-width="240"><template #default="{ row }">{{ displayTime(row.updated_at) }}</template></el-table-column>
+          </el-table></div>
+          <div class="table-footer">显示 {{ investigations.length }} 条调查记录</div>
+        </section>
         <el-button v-if="error" @click="loadPage">重试读取</el-button>
         <footer class="page-footer"><span>LogScope</span><span>创建记录不启动调查 · 未评估不表示低风险</span></footer>
       </div>

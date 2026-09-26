@@ -7,8 +7,7 @@ import pytest
 from playwright.sync_api import sync_playwright, expect
 
 
-BASE = os.environ.get("UI_BASE_URL", "http://127.0.0.1:" + os.environ.get("UI_PORT", "5173"))
-API_BASE = "http://127.0.0.1:" + os.environ.get("UI_API_PORT", "8000")
+BASE = os.environ.get("UI_BASE_URL", "http://127.0.0.1:5173")
 
 
 def test_severity_human_suggestion_confirmation_and_cross_round_ui(evidence_executor):
@@ -570,7 +569,6 @@ def test_late_start_cleanup_failure_stays_with_original_investigation(cleanup):
             page.goto(BASE + '/#/investigations/' + records[0]['id'])
             page.get_by_label('被调查服务', exact=True).select_option('orders')
             page.get_by_role('button', name='启动调查', exact=True).click()
-            page.wait_for_function('(path) => fetch(path).then(r => r.json()).then(record => record.attempts.length === 1)', arg='/api/investigations/' + records[0]['id'])
             page.get_by_role('button', name='刷新调查状态').click()
             expect(page.get_by_role('button', name='取消调查', exact=True)).to_be_visible()
             assert held[0][1].status == 201
@@ -1274,115 +1272,5 @@ def test_lost_create_response_can_retry_without_duplicate():
         assert response.value.json() == saved[0]
         expect(page.get_by_role("heading", name=title)).to_be_visible()
         with httpx.Client() as client:
-            listing = client.get(f"{BASE}/api/investigations", params={"q": title}).json()
-            assert listing['total'] == 1
-            assert listing['items'][0]['id'] == saved[0]['id']
-            assert client.get(f"{BASE}/api/investigations/{saved[0]['id']}").json() == saved[0]
+            assert client.get(f"{BASE}/api/investigations", params={"q": title}).json() == {"items": saved, "total": 1}
         browser.close()
-
-
-def test_listing_filters_pagination_overview_and_refresh_snapshot(evidence_executor):
-    marker = 'listing-' + uuid4().hex[:8]
-    with httpx.Client(base_url=API_BASE, trust_env=False, timeout=20) as client:
-        for number in range(23):
-            response = client.post('/api/investigations', json={'title': f'{marker}-{number:02d}'},
-                                   headers={'Idempotency-Key': str(uuid4())})
-            assert response.status_code == 201
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        try:
-            page = browser.new_page()
-            requests = []
-            page.on('request', lambda request: requests.append(request.url) if '/api/investigations?' in request.url else None)
-            page.goto(BASE, wait_until='domcontentloaded')
-            page.get_by_placeholder('搜索调查标题或编号').fill(marker)
-            page.get_by_label('最后更新时间', exact=True).select_option('1h')
-            page.get_by_role('button', name='搜索', exact=True).click()
-            overview = page.get_by_label('匹配调查概况')
-            expect(overview.locator('dd')).to_have_text(['23', '0', '23', '0'])
-            expect(page.locator('.table-footer')).to_contain_text('共 23 条')
-            expect(page.locator('.el-table__body-wrapper .incident-title')).to_have_count(20)
-            page.wait_for_url('**updated_from=**')
-            first_url = page.url
-            page.get_by_role('button', name='Go to next page').click()
-            expect(page.locator('.el-table__body-wrapper .incident-title')).to_have_count(3)
-            expect(overview.locator('dd')).to_have_text(['23', '0', '23', '0'])
-            from urllib.parse import urlparse, parse_qs
-            first = parse_qs(urlparse(first_url.split('#', 1)[1]).query)
-            last = parse_qs(urlparse(requests[-1]).query)
-            assert last['updated_from'] == first['updated_from']
-            assert last['updated_before'] == first['updated_before']
-            assert 'relative_range' not in last
-            page.locator('.el-table__body-wrapper .incident-title').first.click()
-            page.get_by_role('button', name='返回列表', exact=True).click()
-            expect(page.locator('.el-table__body-wrapper .incident-title')).to_have_count(3)
-            page.get_by_role('button', name='刷新列表', exact=True).click()
-            expect(page.locator('.el-table__body-wrapper .incident-title')).to_have_count(20)
-            expect(overview.locator('dd')).to_have_text(['23', '0', '23', '0'])
-            assert parse_qs(urlparse(page.url.split('#', 1)[1]).query)['updated_before'] != first['updated_before']
-            page.reload()
-            expect(overview.locator('dd')).to_have_text(['23', '0', '23', '0'])
-            page.set_viewport_size({'width': 390, 'height': 844})
-            page.get_by_label('服务', exact=True).select_option('orders')
-            page.get_by_role('button', name='搜索', exact=True).click()
-            expect(overview.locator('dd')).to_have_text(['0', '0', '0', '0'])
-            expect(page.get_by_text('没有匹配的调查记录', exact=True)).to_be_visible()
-        finally:
-            browser.close()
-
-
-def test_listing_late_response_does_not_overwrite_detail_or_new_search(evidence_executor):
-    marker = 'race-' + uuid4().hex[:8]
-    with httpx.Client(base_url=API_BASE, trust_env=False, timeout=20) as client:
-        record = client.post('/api/investigations', json={'title': marker},
-                             headers={'Idempotency-Key': str(uuid4())}).json()
-    with sync_playwright() as p:
-        browser = p.chromium.launch(headless=True)
-        try:
-            page = browser.new_page()
-            page.goto(BASE)
-            expect(page.get_by_label('匹配调查概况')).to_be_visible()
-            held = []
-            page.route('**/api/investigations?**', lambda route: held.append(route))
-            page.get_by_placeholder('搜索调查标题或编号').fill(marker)
-            page.get_by_role('button', name='搜索', exact=True).click()
-            expect(page.get_by_role('status').filter(has_text='正在读取调查及概况')).to_be_visible()
-            page.wait_for_timeout(100)
-            assert held
-            # Browser-driven navigation bypasses openDetail; the route itself must invalidate reads.
-            page.evaluate('(id) => { location.hash = "/investigations/" + id }', record['id'])
-            expect(page.get_by_role('heading', name=marker, exact=True)).to_be_visible()
-            held.pop().fulfill(status=200, content_type='application/json', body=client_response(marker))
-            page.wait_for_timeout(100)
-            assert page.url.endswith('/investigations/' + record['id'])
-            expect(page.get_by_role('heading', name=marker, exact=True)).to_be_visible()
-            page.unroute('**/api/investigations?**')
-            page.get_by_role('button', name='返回列表', exact=True).click()
-            expect(page.get_by_label('匹配调查概况')).to_be_visible()
-            delayed = []
-            page.route('**/api/investigations?**', lambda route: delayed.append(route))
-            page.get_by_placeholder('搜索调查标题或编号').fill('old-search')
-            page.get_by_role('button', name='搜索', exact=True).click()
-            page.wait_for_timeout(100)
-            assert delayed
-            old = delayed.pop()
-            # Submit a newer request while the first one is pending (keyboard submit).
-            page.get_by_placeholder('搜索调查标题或编号').fill(marker)
-            page.locator('.listing-filters').evaluate('(form) => form.requestSubmit()')
-            page.wait_for_timeout(100)
-            assert delayed
-            delayed.pop().fulfill(status=200, content_type='application/json', body=client_response(marker))
-            expect(page.locator('.el-table__body-wrapper .incident-title')).to_have_text(marker)
-            old.fulfill(status=200, content_type='application/json', body=client_response('old-search'))
-            page.wait_for_timeout(100)
-            expect(page.locator('.el-table__body-wrapper .incident-title')).to_have_text(marker)
-        finally:
-            browser.close()
-
-
-def client_response(query):
-    # Playwright routes accept body/status; use the real HTTP endpoint, never a sample result.
-    with httpx.Client(base_url=API_BASE, trust_env=False, timeout=20) as client:
-        response = client.get('/api/investigations', params={'q': query})
-        assert response.status_code == 200
-        return response.text

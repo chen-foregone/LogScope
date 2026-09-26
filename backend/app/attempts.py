@@ -19,6 +19,7 @@ attempts = Table(
     Column("investigation_id", Uuid, ForeignKey("investigations.id")),
     Column("request_key", Uuid), Column("request_body", Text),
     Column("attempt_number", Integer),
+    Column("reverify_conclusion_id", Uuid, ForeignKey('conclusions.id')),
     Column("service_id", String(80)), Column("source_ids", JSON),
     Column("starts_at", DateTime(timezone=True)), Column("ends_at", DateTime(timezone=True)),
     Column("created_at", DateTime(timezone=True)), Column("status", String(20)),
@@ -43,6 +44,7 @@ executions = Table(
 class StartAttempt(BaseModel):
     model_config = ConfigDict(extra="forbid")
     service_id: str = Field(min_length=1, max_length=80)
+    reverify_conclusion_id: UUID | None = None
     starts_at: AwareDatetime | None = None
     ends_at: AwareDatetime | None = None
 
@@ -83,6 +85,7 @@ def attempt_views(connection, investigation_id):
         views.append({key: row[key] for key in ('id', 'attempt_number', 'service_id', 'starts_at', 'ends_at', 'created_at', 'deadline_at', 'status', 'ended_at', 'result', 'end_reason')}
             | {'execution_mode': 'controlled', 'evidence': saved, 'evidence_count': len(saved), 'evidence_notices': notices,
                'historical_reference_states': historical_reference_states(connection, row),
+               **({'reverify_conclusion_id': str(row['reverify_conclusion_id'])} if row['reverify_conclusion_id'] else {}),
                'conclusions': history, 'conclusion': history[-1] if history else None,
                'queries': queried, 'query_coverage': query_coverage(queried, coverage_aliases(connection, row['id'], row['source_ids'])),
                'cancel_requested_at': row['cancel_requested_at'], 'stop_confirmed_at': row['stop_confirmed_at'],
@@ -128,7 +131,7 @@ def attempt_router(engine, services, adapter, clock):
     @router.post("/{investigation_id}/attempts", status_code=201, response_model=InvestigationView)
     def start(investigation_id: UUID, payload: StartAttempt, response: Response,
               idempotency_key: Annotated[UUID, Header()]):
-        body = json.dumps(payload.model_dump(mode="json"), sort_keys=True)
+        body = json.dumps(payload.model_dump(mode="json", exclude={'reverify_conclusion_id'} if payload.reverify_conclusion_id is None else set()), sort_keys=True)
         with start_transaction(engine) as connection:
             row = connection.execute(select(investigations).where(investigations.c.id == investigation_id)
                                      .with_for_update()).mappings().first()
@@ -151,6 +154,18 @@ def attempt_router(engine, services, adapter, clock):
             service = services.get(payload.service_id)
             if service is None:
                 raise HTTPException(422, "服务未配置或无效，尚未启动")
+            if payload.reverify_conclusion_id is not None:
+                from app.conclusions import conclusions
+                from app.verification import conclusion_history
+                target = connection.execute(select(conclusions, attempts.c.service_id, attempts.c.starts_at, attempts.c.ends_at).join(attempts,
+                    attempts.c.id == conclusions.c.attempt_id).where(conclusions.c.id == payload.reverify_conclusion_id,
+                    attempts.c.investigation_id == investigation_id)).mappings().first()
+                history = conclusion_history(connection, payload.reverify_conclusion_id)
+                if (target is None or target['service_id'] != service.id or not history
+                        or history[-1]['status'] != 'pending_reverification'):
+                    raise HTTPException(422, '重核目标须为本调查同服务的待重新核验结论')
+                if payload.starts_at != target['starts_at'] or payload.ends_at != target['ends_at']:
+                    raise HTTPException(422, '关联原结论重核须使用原日志范围；调整范围请普通新轮，不能以无关时段恢复原确认')
             # 调查→接纳锁；计数独立SQL在锁等待后取得新快照，不维护可漂移的人工计数。
             connection.execute(select(instance_admission.c.id).where(instance_admission.c.id == 1)
                                .with_for_update()).scalar_one()
@@ -163,7 +178,7 @@ def attempt_router(engine, services, adapter, clock):
                 attempts.c.investigation_id == investigation_id).order_by(attempts.c.attempt_number.desc()).limit(1)).scalar_one_or_none()
             connection.execute(insert(attempts).values(
                 id=attempt_id, investigation_id=investigation_id, request_key=idempotency_key,
-                attempt_number=(previous_number or 0) + 1,
+                attempt_number=(previous_number or 0) + 1, reverify_conclusion_id=payload.reverify_conclusion_id,
                 request_body=body, service_id=service.id, source_ids=service.source_ids,
                 starts_at=payload.starts_at or now - timedelta(hours=1), ends_at=payload.ends_at or now,
                 created_at=now, deadline_at=now + timedelta(minutes=10), status="调查中"))

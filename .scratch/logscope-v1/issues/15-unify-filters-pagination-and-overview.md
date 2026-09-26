@@ -1,5 +1,5 @@
 # 15: 统一筛选、更新时间、分页及四项真实概况
-Status: claimed
+Status: needs-info
 Type: task
 Blocked by: 11, 12, 14
 
@@ -33,41 +33,3 @@ Blocked by: 11, 12, 14
 HTTP API + 真实 PostgreSQL 构造经业务API形成的多页混合集，验证全部四公式、各时间边界、所有更新时间触发及读取不变；可控时钟安排相对边界。增量UI E2E验证筛选、分页、刷新及概况联动并保留请求快照。完成包含 schema/API/UI 与全集统计测试，20只汇总回归不代做本单主要验收。
 
 ## Comments
-
-### 2026-11-04 - Service projection and implementation approved
-- User confirmed the implementation plan and authorized implementation.
-- Investigation service is the latest attempt's service_id by attempt_number; no attempt means null (UI: 未选择服务).
-- Exact service filtering and keyword search use that same current service ID, never historical attempt services. Directory names are display labels; removed IDs remain readable and filterable.
-- Keep the approved four overview formulas. Freeze relative time boundaries per apply/refresh, not database contents across pages.
-- First batch: HTTP input validation and the injected creation clock, tested through HTTP against PostgreSQL. Pagination, aggregation, UI, full regression and final review remain pending.
-- Batch 1 verified: invalid listing parameters return 422 without changing the record; creation uses the injected business clock and replay/read preserves timestamps and retention. Red failures observed before each implementation. Targeted PostgreSQL/API regression: 22 passed; vue-tsc -b and git diff --check passed.
-- Batch 1 does not implement valid filters, pagination or time snapshot resolution yet. The existing list response remains unchanged until batch 2; do not treat the accepted parameter schema as completed filtering support.
-
-### Implementation and compatibility notes
-- List API now returns bounded lightweight summaries (default 20, maximum 100), pagination, resolved filter and the four full-match aggregates. Detail remains the full record endpoint. This is an intentional list-response contract change; repository consumers/tests are updated.
-- Latest attempt is selected by persistent attempt_number. Title/UUID/current service ID literal case-insensitive search, exact service ID, and updated_at [from,before) form one matched set. No attempt means null service/pending/zero evidence. No historic service matching or historic evidence accumulation.
-- List and aggregate statements run in one REPEATABLE READ transaction. Relative boundaries resolve once on apply/refresh; pagination and detail-return revalidation reuse absolute boundaries. Cross-page database contents are not frozen. Browser refresh reapplies the relative range at page 1 per approved plan.
-- UI uses lightweight components and a page-local composable, guards sequence and originating route, keeps prior results on error, displays timestamps UTC+8, and restores applied filters through the URL. No new runtime dependency or database migration for issue15.
-- Creation now shares the injected business clock. HTTP clock tests cover creation/start/evidence/conclusion/severity/confirmation/cancel/reopen/historical inclusion/timeout/lost/completion/source failure and read/replay invariance. Existing deadline/query/concurrency suites retain terminal arbitration coverage.
-- Concurrent issues13/16/18 changes are preserved. Issue15's commit uses an isolated index to exclude their work and never resets the shared index. Retained-but-unverifiable evidence remains an included record for count purposes; verification is not a hidden deletion filter.
-- UI fixture supports UI_PORT/UI_API_PORT and optional UI_PREVIEW=1. Vite proxy target is configurable for isolated ports; defaults stay 5173/8000. Production preview is used because development resource loading stalled in this environment.
-
-## Answer
-Implementation is delivered; final all-green acceptance is pending shared PostgreSQL recovery. Status stays claimed rather than claiming a fully verified resolution.
-
-### Verification evidence
-- First TDD slices observed red for invalid pagination and non-injected creation clock, then green.
-- Full backend run before the latest concurrent retention changes: 381 passed (issue15-backend-final.txt).
-- Latest compatible issue15 HTTP/PostgreSQL suite: 27 passed. Includes mixed multi-page terminal/active/no-round records, exact formulas, changed service projection, reliable deduplication and no cross-investigation deduplication, fixed/relative boundaries, and write/read timestamp matrix.
-- Isolated actual Chromium/API/PostgreSQL issue15 UI: 2 passed (23 records, full-set overview, fixed boundary pagination, detail return, refresh/reload, mobile empty service match, late route/search responses).
-- Full isolated UI first run: 65 passed/8 failed while concurrent backend signatures changed; retry of those scenarios: 12 passed/1 timing failure. The existing held-start test now waits for actual committed attempt visibility before refresh.
-- Latest full UI retry: 46 passed/27 environment setup errors. Latest compatible backend retry: 40 passed/79 environment errors. PostgreSQL reported shared-memory DiskFull (No space left on device), then recovery mode. These errors are NOT counted as passing or code regressions; no shared database restart or destructive schema cleanup performed.
-- Typecheck and production build passed. Existing >500kB bundle warning remains. UI used production preview because Vite development resources stalled in this environment.
-
-### Final code review
-Standards axis: prior P2 route overwrite/stale list/replay assertion defects fixed; final incremental review found no remaining actionable defect.
-Spec axis: latest-service contract, full-set formulas, UTC+8 presentation and timestamp coverage reviewed; prior display/return defects fixed; final review found no new defect. Browser refresh page1/relative recalculation is approved behavior, not a defect.
-Review is static plus the executed tests above, not a claim that the final environment-blocked full run passed.
-
-### Re-run after database recovery
-Use PowerShell with PYTHONPATH=backend. Run `.venv/Scripts/python.exe -m pytest backend/tests tests -q -p no:cacheprovider --tb=short` after building with `node_modules/.bin/vue-tsc.cmd -b` and `node node_modules/vite/bin/vite.js build`. Set UI_PREVIEW=1, UI_PORT=5273 and UI_API_PORT=8100 for isolated existing UI tests. Other tasks' dedicated UI tests may have their own fixed-port assumptions; do not run those concurrently on the same ports.

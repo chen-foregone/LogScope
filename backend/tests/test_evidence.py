@@ -1,4 +1,3 @@
-from test_investigations import summary, assert_listing
 import json
 import pytest
 from uuid import uuid4
@@ -63,7 +62,7 @@ def test_save_redacted_material_updates_real_detail_and_survives_restart(databas
         assert after['evidence_count'] == 1
         assert after['attempts'][0]['evidence'] == [evidence]
         assert client.get(path).json() == after
-        assert client.get('/api/investigations').json()['items'][0] == summary(after)
+        assert client.get('/api/investigations').json()['items'][0] == after
         public = json.dumps(after, ensure_ascii=False) + reply.text + caplog.text
         for raw in payload['record']['fields'].values():
             assert raw not in public, '输出含未脱敏合成值'
@@ -265,7 +264,7 @@ def test_same_content_different_sources_and_identity_domains_are_independent(dat
         after = client.get(path).json()
         assert after['evidence_count'] == 11
         assert after['attempts'][0]['evidence_count'] == 11
-        assert client.get('/api/investigations').json()['items'] == [summary(after)]
+        assert client.get('/api/investigations').json()['items'] == [after]
         attempt_path = path + '/attempts/' + after['attempts'][0]['id']
         attempt = client.get(attempt_path).json()
         assert attempt['evidence_count'] == 11
@@ -342,7 +341,7 @@ def test_concurrent_identity_conflict_keeps_one_complete_evidence(database_url, 
         after = client.get(path).json()
         assert after['evidence_count'] == 1
         assert after['attempts'][0]['evidence'] == [accepted]
-        assert client.get('/api/investigations').json()['items'] == [summary(after)]
+        assert client.get('/api/investigations').json()['items'] == [after]
 
 
 def test_failure_after_identity_insert_rolls_back_without_claiming_identity(database_url, tmp_path):

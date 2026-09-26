@@ -1,5 +1,5 @@
 # 13: 处理证据失效并完成新轮重新核验
-Status: ready-for-agent
+Status: claimed
 Type: task
 Blocked by: 05, 12
 
@@ -31,3 +31,37 @@ Blocked by: 05, 12
 HTTP API + 真实 PostgreSQL 配可控来源可访问性，逐案验证有片段/仅链接、关键/非关键失效、充分替代支撑、手动新轮充分与不足恢复；提交语义判断、历史和UI证据。受控案例不证明真实模型质量，19用真实Agent补足。完成包含 schema/API/UI 及A21/A23全部局部验收。
 
 ## Comments
+
+2026-11-04：用户授权开始实施并确认窗口15并行修改可保留兼容。基点0a8d649；仅认领13，不覆盖/提交15的列表、样式或公共测试变更。沿用HTTP+真实PG及Chromium边界。
+
+## Answer
+
+### 实施契约与范围
+- 0016新增evidence_checks、conclusion_checks及attempts.reverify_conclusion_id，版本唯一约束、外键、追加历史；旧材料不覆写，旧轮status/result/ended_at不改。
+- 受控观察接口POST /api/executor/investigations/{id}/evidence/{id}/verification独立于旧执行产物接口。使用部署级受控凭证，可观测已结束材料，但不恢复旧execution有效性或接收其迟到产物。来源状态reachable/unreachable/unknown与保留材料retained/invalid/missing分别表达；固定原因、4KiB上限、严格输入、不接自由文本。observer是可信部署级边界，不是任意浏览器/旧执行身份；真实来源观测仍由18验收。
+- expected_version CAS及Idempotency-Key，调查锁串行化观测/结论/启动；同键重放200不刷新时间、异内容或过期版本409；凭证401、跨调查/缺证据404、格式/业务校验422、固定安全503。读取无写入，无来源网络请求和环境修复。
+- 新controlled-location-v1只存脱敏定位、来源/时间/查询，无record/可靠身份，不能因有定位代号冒称可核验；既有controlled-event-v1仍必需受控record。来源失联不把保留片段删除或标missing。
+- 缺充分可核验受控因果支撑时追加pending_reverification；普通相关性不支持确认。充分替代支撑避免机械降格，并追加实际替代依据历史。降格记录保留受影响依据链接，current_evidence_ids在待重核时为空，原结论保留。
+- 标准POST attempts可选reverify_conclusion_id，须同调查同服务待重新核验目标及原绝对日志范围；不另设启动旁路，沿用唯一轮/旧执行安全/三容量/幂等。修改范围仍可普通新轮，但不能借无关范围恢复旧确认。充分受控因果结论才恢复关联目标，旧材料重新可访问不会自动恢复确认。
+- UI展示来源、核验状态、固定原因、逐次依据导航，准备重核后仍由用户明确提交标准启动表单；请求身份和目标随原sessionStorage启动body恢复。严重程度独立。
+
+### 实际测试与审查记录
+- 首次测试受sandbox临时目录权限阻断，不算产品红灯；批准外部运行后新增观察接口404真实红灯，接入后1 passed。
+- 扩展材料/关键/替代/新轮/权限后，link-only路径422真实红灯；新增受限controlled-location-v1后通过。专项7个HTTP/PG案例与移动390x844 Chromium路径曾8 passed；后加替代依据UI路径须以最终回归为准。
+- 首轮证据/结论/UI回归88 passed/2 failed：一个旧列表快照SQL钩子受15列表投影变更影响，另一个新增UI区域名称写错，修正为实际第2轮当前；不冒称该轮全过。
+- 双轴独立审查：Spec发现替代支撑未记录依据P2，已补受控历史、current_evidence_ids及断言，静态复审关闭；Standards无确定硬性违规，提出共用因果聚合P3及降格依据追溯建议，已补降格依据。共享trace_supports判据，未为非阻断建议重构全部业务。
+- 审查修复前全量主动中断，不作最终证据；修复后专项7 passed、1 UI因另一窗口占5173而夹具拒绝，未复用/杀其他服务。最终冻结全量已重新发起，结果待取回。类型检查及Vite构建已实际通过，仅既有500KiB分块警告。
+
+### 部署与剩余边界
+- 只迁移测试PG55433独立schema，未迁移开发库、不删除schema、不push。部署须先alembic upgrade head再运行新版本；降级先停止新写入并备份核验历史，downgrade会删除新增核验历史，不应当作无损回滚。
+- 同轮可靠身份重新获取仍保留去重原材料；可信observer显式检查可恢复材料retained，但原结论仍必须手动新轮充分核验。无任意强制确认。
+- 受控轨迹不是任意机制因果证明或真实Agent质量验收；18/19继续负责真实集成。
+
+
+### 本次最终核验与提交范围
+- 用户明确授权兼容并行15/16/17/18，仅提交13。使用HEAD+13独立快照和独立Git index构造提交，其他窗口工作区及既有暂存不回退。
+- 共享现场完整回归实际417 passed、18 failed、17 errors /3306.09s；列表SQL钩子/列表字段、UI端口和超时均存在失败，不宣称全绿。失联越过截止专项随后独立复核通过；最新共享现场核验7项HTTP/PG通过，UI因其他窗口占端口拒绝，后尝试独立端口遭POST超时，均如实保留。
+- 剔除共享文件中的15列表、16保留投影、18模拟来源改动，构造原HEAD+仅13代码快照。首次快照误含16 current_view参数，立即中断并剔除，失败不作为产品红灯或验收。
+- 正确仅13快照专项7 passed /25.22s；同快照vue-tsc与Vite构建通过（仅既有大分块警告）。此前修复后的真实Chromium完整13路径1 passed /58.64s，包含替代依据跳转。
+- 正确仅13快照最终完整回归216 passed、214 errors /789.37s：前216无断言失败，随后PG55433迁移报DiskFull（共享内存段无法扩至32MiB），之后连接报数据库recovery mode。不重启/清理共享库，不宣称剩余通过；最终验收仍需环境恢复后全量复核。
+- 工单保持claimed而非resolved：功能和双轴审查已完成，但最终全量未绿；无已知剩余13阻断代码发现。提交不等同于发布验收，未迁移开发库、不push。

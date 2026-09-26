@@ -30,9 +30,10 @@ class Analysis(StrictInput):
 
 
 def conclusion_views(connection, attempt_id):
+    from app.verification import conclusion_check_view
     rows = connection.execute(select(conclusions.c.material).where(conclusions.c.attempt_id == attempt_id)
                               .order_by(conclusions.c.version)).scalars()
-    return list(rows)
+    return [conclusion_check_view(connection, material) for material in rows]
 
 
 def conclusion_router(engine, credential, clock):
@@ -95,7 +96,7 @@ def conclusion_router(engine, credential, clock):
                 if payload.kind == 'hypothesis':
                     hypothesis_supported = False
                     for item in saved:
-                        record = item['material'].get('snippet', {})
+                        record = item['material'].get('snippet') or {}
                         event, error = record.get('event'), record.get('error_code')
                         # 依赖失败本身或兼容传播的请求错误只提供候选依据，不证明传播链。
                         hypothesis_supported = hypothesis_supported or (
@@ -112,18 +113,14 @@ def conclusion_router(engine, credential, clock):
                     raise HTTPException(422, '未确认结论须明确缺失证据')
                 supported = False
                 unresolved = False
+                from app.verification import evidence_usable, trace_supports, restore_linked_conclusion
                 all_saved = connection.execute(included_evidence(attempt_id)).mappings().all()
                 for item in all_saved:
-                    record = item['material'].get('snippet', {})
+                    record = item['material'].get('snippet') or {}
                     trace = record.get('causal_trace')
                     if trace:
-                        matches = (trace.get('format') == 'observed-propagation-v1'
-                            and record.get('event') == 'request_failed'
-                            and trace.get('dependency_error') == trace.get('propagated_error') == record.get('error_code')
-                            and trace.get('request_outcome') == 'failed_by_dependency'
-                            and trace.get('local_rejection') == trace.get('independent_failure') == 'excluded_by_trace'
-                            and trace.get('contradiction') == 'none_observed')
-                        supported = supported or (matches and item['id'] in payload.evidence_ids)
+                        matches = trace_supports(item['material'])
+                        supported = supported or (matches and evidence_usable(connection, item) and item['id'] in payload.evidence_ids)
                         unresolved = unresolved or not matches
                 if payload.kind == 'confirmed' and (payload.mechanism != 'dependency_error_propagation'
                         or payload.missing or not supported or unresolved or row['evidence_unavailable']):
@@ -143,6 +140,7 @@ def conclusion_router(engine, credential, clock):
                 connection.execute(insert(conclusions).values(id=UUID(result['id']), attempt_id=attempt_id,
                     execution_id=execution_id, version=result['version'], request_key=idempotency_key,
                     request_body=canonical, created_at=now, material=result))
+                restore_linked_conclusion(connection, row, result, now)
                 values = {'updated_at': now}
                 if payload.finish:
                     connection.execute(update(attempts).where(attempts.c.id == attempt_id).values(

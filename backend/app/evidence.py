@@ -7,7 +7,7 @@ from typing import Annotated, Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, Header, HTTPException, Request, Response
-from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError, field_validator
+from pydantic import AwareDatetime, BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 from sqlalchemy import Column, DateTime, ForeignKey, JSON, LargeBinary, Table, Uuid, String, UniqueConstraint, insert, select, update
 
 from app.attempts import attempts, executions
@@ -101,13 +101,21 @@ class FileIdentity(StrictInput):
 
 
 class Material(StrictInput):
-    format: Literal['controlled-event-v1']
+    format: Literal['controlled-event-v1', 'controlled-location-v1']
     source_id: str = Field(min_length=1, max_length=120)
     occurred_at: AwareDatetime
     query: Query
-    record: Record
+    record: Record | None
     locator: str | None = Field(default=None, min_length=1, max_length=4096)
     identity: Annotated[RecordIdentity | FileIdentity, Field(discriminator='kind')] | None = None
+
+    @model_validator(mode='after')
+    def material_kind(self):
+        if self.format == 'controlled-event-v1' and self.record is None:
+            raise ValueError('event requires retained material')
+        if self.format == 'controlled-location-v1' and (self.record is not None or not self.locator or self.identity):
+            raise ValueError('location-only requires locator, no record identity or event')
+        return self
 
 
 def included_evidence(attempt_id):
@@ -116,10 +124,11 @@ def included_evidence(attempt_id):
 
 
 def evidence_view(connection, row):
+    from app.verification import evidence_check_view
     origin = connection.execute(select(attempts.c.attempt_number).where(attempts.c.id == row['attempt_id'])).scalar_one()
     return dict(row['material'], id=str(row['id']), identity_status=row['identity_status'],
         source_attempt_id=str(row['attempt_id']), source_attempt_number=origin,
-        verification='retained_structured_material' if verifiable(row['material']) else 'unverifiable')
+        **evidence_check_view(connection, row))
 
 
 def verifiable(material):
@@ -133,6 +142,7 @@ def verifiable(material):
 
 
 def historical_reference_states(connection, target):
+    from app.verification import evidence_usable
     historical = connection.execute(select(evidence).join(attempts, attempts.c.id == evidence.c.attempt_id).where(
         attempts.c.investigation_id == target['investigation_id'],
         attempts.c.attempt_number < target['attempt_number'])).mappings().all()
@@ -146,7 +156,7 @@ def historical_reference_states(connection, target):
             and source['content_key'] and item['content_key'] == source['content_key'])), None)
         origin = connection.execute(select(attempts).where(attempts.c.id == source['attempt_id'])).mappings().one()
         material = source['material']
-        allowed = (verifiable(material) and origin['service_id'] == target['service_id']
+        allowed = (evidence_usable(connection, source) and origin['service_id'] == target['service_id']
             and material['source'] in sources
             and target['starts_at'] <= datetime.fromisoformat(material['query']['starts_at']) <=
             datetime.fromisoformat(material['occurred_at']) < datetime.fromisoformat(material['query']['ends_at']) <= target['ends_at'])
@@ -199,7 +209,8 @@ def reference_router(engine, clock, credential):
                     raise HTTPException(422, '历史证据不属于本调查先前轮次')
                 origin = connection.execute(select(attempts).where(attempts.c.id == source['attempt_id'])).mappings().one()
                 material = source['material']
-                if not verifiable(material):
+                from app.verification import evidence_usable
+                if not evidence_usable(connection, source):
                     raise HTTPException(422, '历史证据不可核验：缺少保留的受控片段、来源、时间或查询条件')
                 from app.queries import coverage_aliases
                 if origin['service_id'] != row['service_id'] or material['source'] not in coverage_aliases(connection, attempt_id, row['source_ids']):
@@ -298,10 +309,10 @@ def evidence_router(engine, credential, clock):
                               'ends_at': payload.query.ends_at.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z'),
                               'fields': redact(payload.query.fields)},
                     'snippet': {'event': payload.record.event, 'error_code': payload.record.error_code,
-                                'fields': redact(payload.record.fields)},
+                                'fields': redact(payload.record.fields)} if payload.record else None,
                     'locator': '定位代号-' + alias('locator', payload.locator) if payload.locator else None,
                     'redaction_note': NOTE}
-                if payload.record.causal_trace is not None:
+                if payload.record and payload.record.causal_trace is not None:
                     result['snippet']['causal_trace'] = payload.record.causal_trace.model_dump()
                 identity_key = alias('evidence-identity-v1', [payload.source_id, payload.identity.model_dump()]) if payload.identity else None
                 # 比较原始受控事件而非脱敏片段；查询与定位是获取上下文，不是原始事件内容。
@@ -324,7 +335,8 @@ def evidence_router(engine, credential, clock):
                             for candidate in matches:
                                 origin = connection.execute(select(attempts).where(attempts.c.id == candidate['attempt_id'])).mappings().one()
                                 retained = candidate['material']
-                                if (verifiable(retained) and origin['service_id'] == row['service_id']
+                                from app.verification import evidence_usable
+                                if (evidence_usable(connection, candidate) and origin['service_id'] == row['service_id']
                                         and retained['source'] == result['source']
                                         and row['starts_at'] <= datetime.fromisoformat(retained['query']['starts_at']) <=
                                         datetime.fromisoformat(retained['occurred_at']) < datetime.fromisoformat(retained['query']['ends_at']) <= row['ends_at']):
@@ -347,7 +359,8 @@ def evidence_router(engine, credential, clock):
                 result['identity_status'] = status
                 result['source_attempt_id'] = str(attempt_id)
                 result['source_attempt_number'] = row['attempt_number']
-                result['verification'] = 'retained_structured_material'
+                result['verification'] = 'retained_structured_material' if verifiable(result) else 'unverifiable'
+                result.update(source_access='unknown', verification_version=0, verification_history=[])
                 connection.execute(update(investigations).where(investigations.c.id == investigation_id).values(updated_at=now))
                 result['id'] = str(identity)
                 finalize_deadline(connection, row, clock, pending)

@@ -3,13 +3,10 @@ from uuid import UUID, uuid4
 
 from typing import Annotated, Literal
 
-from fastapi import APIRouter, Header, HTTPException, Query, Response
+from fastapi import APIRouter, Header, HTTPException, Response
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from pydantic import BaseModel, ConfigDict, Field, field_validator
-from sqlalchemy import Column, DateTime, MetaData, String, Table, Uuid, Integer, select
-
-from app.investigation_listing import (InvestigationPageQuery, InvestigationFilterQuery, InvestigationPage,
-    InvestigationOverviewResponse, read_investigation_listing)
+from sqlalchemy import Column, DateTime, MetaData, String, Table, Uuid, Integer, cast, or_, select
 
 metadata = MetaData()
 investigations = Table(
@@ -76,14 +73,14 @@ def representation(row, attempts=None):
     }
 
 
-def investigation_router(engine, clock):
+def investigation_router(engine):
     from app.attempts import current_view
     router = APIRouter(prefix="/investigations")
 
     @router.post("", status_code=201, response_model=InvestigationView)
     def create(payload: CreateInvestigation, response: Response,
                idempotency_key: Annotated[UUID, Header()]):
-        now = clock()
+        now = datetime.now(timezone.utc)
         values = dict(id=uuid4(), request_key=idempotency_key, **payload.model_dump(),
                       created_at=now, updated_at=now, retention_expires_at=now + timedelta(days=30))
         with engine.begin() as connection:
@@ -102,13 +99,20 @@ def investigation_router(engine, clock):
             result = current_view(connection, row)
         return result
 
-    @router.get("", response_model=InvestigationPage)
-    def listing(filters: Annotated[InvestigationPageQuery, Query()]):
-        return read_investigation_listing(engine, filters, clock)
-
-    @router.get("/overview", response_model=InvestigationOverviewResponse)
-    def overview(filters: Annotated[InvestigationFilterQuery, Query()]):
-        return read_investigation_listing(engine, filters, clock, overview_only=True)
+    @router.get("", response_model=InvestigationList)
+    def listing(q: str = ""):
+        statement = select(investigations)
+        query = q.strip()
+        if query:
+            statement = statement.where(or_(
+                investigations.c.title.icontains(query, autoescape=True),
+                cast(investigations.c.id, String).icontains(query, autoescape=True),
+            ))
+        # 调查字段与各轮次投影必须来自同一快照；不改变启动等写事务隔离。
+        with engine.connect().execution_options(isolation_level="REPEATABLE READ") as connection:
+            rows = connection.execute(statement.order_by(investigations.c.updated_at.desc(), investigations.c.id)).mappings().all()
+            items = [current_view(connection, row) for row in rows]
+        return {"items": items, "total": len(rows)}
 
     @router.get("/{investigation_id}", response_model=InvestigationView)
     def detail(investigation_id: UUID):

@@ -54,6 +54,9 @@ def create_app(database_url: str | None = None, *, services_file=None, executor_
     from app.severity import severity_router
     application.include_router(severity_router(engine, executor_credential if executor_credential is not None else settings.executor_credential, business_clock), prefix=settings.api_prefix)
     from app.conclusions import conclusion_router
+    from app.verification import verification_router
+    application.include_router(verification_router(engine, executor_credential if executor_credential is not None else settings.executor_credential,
+        business_clock), prefix=settings.api_prefix)
     from datetime import datetime, timezone
     from app.queries import QuerySchedule, query_router
     application.include_router(query_router(engine, executor_credential if executor_credential is not None else settings.executor_credential,
@@ -69,7 +72,7 @@ def create_app(database_url: str | None = None, *, services_file=None, executor_
     application.include_router(attempt_router(engine, services, adapter, clock or (lambda: datetime.now(timezone.utc))), prefix=settings.api_prefix)
     application.include_router(service_router(services), prefix=settings.api_prefix)
     application.include_router(health_router, prefix=settings.api_prefix)
-    application.include_router(investigation_router(engine, business_clock), prefix=settings.api_prefix)
+    application.include_router(investigation_router(engine), prefix=settings.api_prefix)
 
     @application.get("/")
     def root() -> dict[str, str]:
