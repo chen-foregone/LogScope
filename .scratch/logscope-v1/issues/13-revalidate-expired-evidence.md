@@ -1,5 +1,5 @@
 # 13: 处理证据失效并完成新轮重新核验
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 05, 12
 
@@ -65,3 +65,11 @@ HTTP API + 真实 PostgreSQL 配可控来源可访问性，逐案验证有片段
 - 正确仅13快照专项7 passed /25.22s；同快照vue-tsc与Vite构建通过（仅既有大分块警告）。此前修复后的真实Chromium完整13路径1 passed /58.64s，包含替代依据跳转。
 - 正确仅13快照最终完整回归216 passed、214 errors /789.37s：前216无断言失败，随后PG55433迁移报DiskFull（共享内存段无法扩至32MiB），之后连接报数据库recovery mode。不重启/清理共享库，不宣称剩余通过；最终验收仍需环境恢复后全量复核。
 - 工单保持claimed而非resolved：功能和双轴审查已完成，但最终全量未绿；无已知剩余13阻断代码发现。提交不等同于发布验收，未迁移开发库、不push。
+
+
+### 最终验收关闭（2026-11-05）
+- 本窗口继续兼容其他窗口，不接管其已认领工单。仅13代码快照（原基点0a8d649加13代码，不含15/16/18业务变更）冻结后完整回归实际430 passed in 1184.48s (0:19:44)，输出.scratch/logscope-v1/baseline-13/isolated-verified-results.txt。
+- 测试环境修正仅在隔离快照：每连接options显式max_parallel_workers_per_gather=0，API/Vite独立8093/5193端口；未修改PG全局配置、未重启/清理共享库。初次425 passed/5 failed为pg_dump schema提取误含新增options参数；修正隔离测试schema解析为首个token，5项隐私专项真实5 passed /48.03s，再完整430通过。没有删减隐私断言或跳过测试。
+- 最终430包含7项核验HTTP/PG及真实Chromium核验主流程（来源失联仍保留材料、降格、新轮、恢复、替代依据导航），并覆盖既有证据、取消/失联/期限/容量及历史回归。之前216/214环境错误与共享现场417/18/17保留为历史过程，均不冒称通过。
+- 同代码快照类型检查与Vite构建通过，双轴Spec审查P2已修复复核关闭，Standards无剩余确定阻断。源码/schema/API/UI交付及本地验收完成，Status设resolved；真实来源/Agent语义仍由18/19验收，未部署开发数据库、不push。
+- 原13实现提交f42fb98、兼容并行15纠正e39567b均保留历史，不amend；当前收尾仅提交13工单和地图变更，不包含其他窗口暂存内容。
