@@ -140,6 +140,7 @@ def query_router(engine, credential, sources, clock, schedule):
         async for chunk in request.stream():
             if chunk:
                 raise HTTPException(422, '查询不接受请求体、来源地址或错误分类，仅使用本轮快照')
+        collection_failed = False
         try:
             with engine.begin() as connection:
                 connection.execute(select(investigations.c.id).where(investigations.c.id == investigation_id).with_for_update()).first()
@@ -186,6 +187,8 @@ def query_router(engine, credential, sources, clock, schedule):
                                        .values(query_id=identity, blocked=False, retry_at=None))
                 result = {'id': str(identity), 'status': 'running', 'sources': [
                     {'source': alias, 'state': 'pending', 'attempts': 0, 'reason': None, 'failures': [],
+                     **({'mode': 'simulated', 'protocol': 'simulated-logs-v1'}
+                        if getattr(sources.get(source_id), 'mode', None) == 'simulated' else {}),
                      **skipped.get(source_keys[source_id], {})} for source_id, alias in zip(row['source_ids'], aliases)]}
                 if len(skipped) == len(source_keys):
                     raise HTTPException(409, {'code': 'sources_blocked',
@@ -279,9 +282,37 @@ def query_router(engine, credential, sources, clock, schedule):
                             raise TimeoutError()
                         output = await controlled(lambda: schedule.deadline(adapter.query(source_id=source_id,
                             starts_at=row['starts_at'], ends_at=row['ends_at']), min(30, remaining)))
-                        if output is not None:
+                        from app.log_sources import CollectedLogs
+                        if isinstance(output, CollectedLogs):
+                            from app.evidence import Material, save_material
+                            from pydantic import ValidationError
+                            for item in output.items:
+                                if stop_requested():
+                                    raise QueryCanceled()
+                                try:
+                                    encoded = json.dumps(item)
+                                    if len(encoded.encode('utf-8')) > 65536:
+                                        raise ValueError()
+                                    payload = Material.model_validate_json(encoded)
+                                except (ValidationError, ValueError, TypeError):
+                                    payload = None
+                                if payload is not None and payload.source_id != source_id:
+                                    payload = None
+                                try:
+                                    save_material(engine, clock, investigation_id, attempt_id, execution_id, payload, Response(),
+                                                  source_mode=getattr(adapter, 'mode', None))
+                                except HTTPException as error:
+                                    if error.status_code == 503:
+                                        collection_failed = True
+                                    if error.status_code in (403, 503):
+                                        raise
+                                    raise SourceFailure('parameters') from None
+                                await asyncio.sleep(0)
+                        elif output is not None:
                             raise SourceFailure('adapter_error')
                     except QueryCanceled:
+                        raise
+                    except HTTPException:
                         raise
                     except TimeoutError:
                         failure = SourceFailure('timeout')
@@ -366,6 +397,14 @@ def query_router(engine, credential, sources, clock, schedule):
                             connection.execute(update(queries).where(queries.c.id == identity).values(active=False, material=result))
                             from app.cancellation import confirm_stop
                             confirm_stop(connection, investigation_id, attempt_id, clock())
+                        elif owned and collection_failed:
+                            # HTTP collection has exited; preserve evidence but do not pin its source forever.
+                            result['status'] = 'failed'
+                            for state in result['sources']:
+                                if state['state'] in {'pending', 'querying', 'waiting'}:
+                                    state.update(state='unavailable', reason='adapter_error')
+                            release_source_gates(connection, identity, row['source_ids'], result['sources'])
+                            connection.execute(update(queries).where(queries.c.id == identity).values(active=False, material=result))
                 except Exception:
                     raise HTTPException(503, '停止确认未保存，保持正在停止，请读取本轮状态') from None
             if isinstance(error, QueryCanceled):

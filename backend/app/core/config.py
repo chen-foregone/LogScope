@@ -7,6 +7,7 @@ class Settings(BaseSettings):
     api_prefix: str = "/api"
     services_file: str | None = None
     executor_credential: str | None = None
+    simulated_logs_url: str | None = None
 
     model_config = SettingsConfigDict(env_file=".env", env_file_encoding="utf-8", extra="ignore")
 

@@ -1,5 +1,5 @@
-# 18: 接通首个真实只读日志来源
-Status: needs-info
+# 18: 只读外部日志来源接入（本期模拟）
+Status: resolved
 Type: task
 Blocked by: 04, 06
 
@@ -15,7 +15,7 @@ Blocked by: 04, 06
 用户故事主要交付：US-04 的真实来源只读部分、US-48 的真实来源集成部分；关联 US-20、US-21、US-23。
 验收组主要交付：A33；A07、A08、A16、A18、A19 的真实协议补验。
 
-## 开工门槛
+## 原真实接入门槛（后续补验）
 须选定实际来源与协议，明确服务映射、只读权限、受控访问环境及凭据安全注入；具备稳定记录身份能力说明、定位/核验方式、错误分类与限流契约。当前无该访问与协议契约，needs-info 待其齐备解除。不把示例服务名、供应商或凭据方案当已批准；凭据不得写入文档、记忆或报告。
 
 ## 验收标准
@@ -31,3 +31,22 @@ Blocked by: 04, 06
 提供受控真实来源协议、只读权限、scope/identity、来源身份与脱敏错误契约测试记录，业务侧仍走 HTTP API + 真实 PostgreSQL，并展示真实证据UI。危险/故障情形可在适配层受控模拟，但必须区分哪些是实际协议验证；假日志仅限可控适配验收，不能替代A33。完成含配置/schema/API/UI及真实集成证据。
 
 ## Comments
+
+### 2026-11-04 范围调整与实施授权
+
+用户确认本期使用独立运行的模拟外部HTTP服务，替代当前交付对真实供应商的依赖，并批准实施。以上真实来源验收条目保留为后续补验，不作为本期阻塞，也不能以模拟结果勾选A33。当前交付以[模拟接入配套规格](../../simulated-readonly-log-source/spec.md)及以下子工单为准。
+
+- [18-01：接通模拟外部来源并展示首条脱敏证据](18-01-collect-first-simulated-evidence.md)，Blocked by: 04, 06。
+- [18-02：重复采集保持可靠证据条数](18-02-deduplicate-collected-evidence.md)，Blocked by: 18-01。
+- [18-03：来源故障时展示重试与覆盖缺失](18-03-handle-external-source-failures.md)，Blocked by: 18-01。
+- [18-04：取消、超时及提交故障后保持材料一致](18-04-preserve-collected-evidence-on-stop.md)，Blocked by: 18-02, 18-03。
+
+本期完成条件：四张子工单完成，模拟HTTP完整链路与安全回归通过、UI明确标识、提供运行说明和学习材料；真实供应商协议和账号权限仍未证明。
+
+## Answer
+
+2026-11-05 完成本期模拟接入范围，四张子工单均已解决并附证据。实现包括：独立回环 HTTP 模拟服务 `backend/app/mock_logs.py`（合成数据、只读 GET、启动参数选择 normal/empty/unidentified/conflict/invalid/permission/credentials/parameters/temporary/limited/timeout，不提供业务故障注入接口）；后端适配器 `backend/app/log_sources.py`（显式回环 origin、无重定向/代理、1MiB/100 条边界、受控错误分类）；`SIMULATED_LOGS_URL` 显式配置才为服务目录来源构造适配器，默认关闭；`query_router` 复用既有查询编排、来源闸门、重试/时限/停止协议，并把响应逐条送入既有 `evidence.save_material`；查询状态持久化 `mode/protocol`，证据持久化 `source_mode=simulated`，UI 明确标识模拟来源，历史记录不因当前配置变化误标。
+
+验证：`backend/tests/test_log_sources.py` **16 passed**、`tests/test_log_source_ui.py` **3 passed**、`npm run build`（vue-tsc + Vite）通过；完整 `pytest backend/tests tests` 首次 **488 passed / 5 failed / 493 total**，5 项均为执行 PATH 缺 `docker` 导致既有 `pg_dump` 审计用例的环境性失败，含 Docker PATH 复跑该 5 项 **5 passed**，合并 **493 passed**。运行说明、模块学习总结及 8 道不附答案问题见 `docs/simulated-log-source.md`。
+
+**未完成/未证明**：以上真实来源验收条目仍未勾选，A33 未完成。真实供应商协议、稳定记录身份、只读账号权限、真实错误输出脱敏及真实限流契约均未验证；模拟服务的 POST/PUT/DELETE 405 只证明模拟协议，不证明真实账号只读授权。后续取得真实访问契约后须在本工单或新工单补验，不能以本期结果勾选 A33。

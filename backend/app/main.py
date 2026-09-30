@@ -14,6 +14,10 @@ from app.investigations import investigation_router
 def create_app(database_url: str | None = None, *, services_file=None, executor_credential=None, execution_adapter=None, clock=None, query_sources=None, query_schedule=None, deadline_schedule=None) -> FastAPI:
     from app.services import load_services, service_router
     services = load_services(services_file if services_file is not None else settings.services_file)
+    if query_sources is None and settings.simulated_logs_url:
+        from app.log_sources import SimulatedLogSource
+        query_sources = {source_id: SimulatedLogSource(settings.simulated_logs_url)
+                         for service in services.values() for source_id in service.source_ids}
     engine = create_engine(database_url or settings.database_url, pool_pre_ping=True, hide_parameters=True)
 
     from datetime import datetime, timezone

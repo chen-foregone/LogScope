@@ -1,11 +1,12 @@
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, ref } from 'vue'
-import RetentionStatus from './components/RetentionStatus.vue'
 import InvestigationListPanel from './components/InvestigationListPanel.vue'
+import RetentionStatus from './components/RetentionStatus.vue'
 import { useInvestigationList } from './composables/useInvestigationList'
 import { Plus, ShieldCheck, TerminalSquare, Command } from 'lucide-vue-next'
 
 type Evidence = {
+  source_mode?: 'simulated'
   id: string; source: string; occurred_at: string
   query: { starts_at: string; ends_at: string; fields: Record<string, string> }
   snippet: { event: string; error_code: string; fields: Record<string, string> } | null
@@ -19,7 +20,7 @@ type Conclusion = {
   phenomenon?: string; causal_chain?: string; alternatives?: string; contradictions?: string
   verification_history?: { version: number; status: string; reason: string; created_at: string; attempt_id: string; evidence_ids: string[] }[]
 }
-type QuerySource = { source: string; state: string; attempts: number; reason: string | null; retry_after_seconds?: number | null; failures: { reason: string; attempt: number; wait_seconds: number | null }[] }
+type QuerySource = { mode?: 'simulated'; protocol?: string; source: string; state: string; attempts: number; reason: string | null; retry_after_seconds?: number | null; failures: { reason: string; attempt: number; wait_seconds: number | null }[] }
 type QueryRun = { id: string; status: string; sources: QuerySource[] }
 const queryStates: Record<string, string> = { canceled: '已停止，结果不纳入', pending: '尚未查询', querying: '正在查询', waiting: '受限等待', succeeded: '查询成功', unavailable: '来源缺失', skipped: '跳过查询（来源缺失）' }
 const queryReasons: Record<string, string> = { network: '临时网络故障', timeout: '单次查询30秒超时', permission: '权限不足', credentials: '凭据无效', parameters: '查询参数无效', rate_limited: '来源限流', inflight: '来源已有在途查询，等待退出后再试', not_configured: '未配置受控查询适配器', adapter_error: '适配器能力或返回不符合受控契约' }
@@ -523,6 +524,7 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
               <article v-for="query in attempt.queries" :key="query.id" class="evidence-card" aria-label="来源查询">
                 <p>{{ query.status === 'running' ? '查询尚未退出' : '查询已退出' }}</p>
                 <div v-for="source in query.sources" :key="source.source">
+                  <p v-if="source.mode === 'simulated'" role="note">模拟外部日志来源 · {{ source.protocol }} · 非真实来源验收</p>
                   <p>{{ source.source }} · {{ queryStates[source.state] }} · 实际查询次数：{{ source.attempts }}</p>
                   <p v-if="source.reason">原因：{{ queryReasons[source.reason] }}</p>
                   <p v-if="source.retry_after_seconds">来源要求 Retry-After：{{ source.retry_after_seconds }} 秒；不提前绕过限制。</p>
@@ -560,6 +562,7 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
               <p v-if="!attempt.evidence.length">尚无已保存证据。</p>
               <p v-for="notice in attempt.evidence_notices" :key="notice" role="status">{{ notice }}</p>
               <article v-for="item in attempt.evidence" :id="`evidence-${attempt.id}-${item.id}`" :key="item.id" aria-label="脱敏证据" class="evidence-card">
+                <p v-if="item.source_mode === 'simulated'">模拟来源证据 · 合成数据，非真实来源验收</p>
                 <p>来源轮次：第{{ item.source_attempt_number }}轮 <button @click="locateAttempt(item.source_attempt_id)">查看来源轮</button></p>
                 <p>{{ item.verification === 'retained_structured_material' ? '已保留受控脱敏结构化核验材料' : '不可核验：缺少最低核验材料' }}；代号定位不能直接打开原链接。</p>
                 <p>来源状态：{{ item.source_access === 'unreachable' ? '来源不可访问' : item.source_access === 'reachable' ? '来源可访问' : '尚未检查' }}；来源不可访问不自动等于证据不可核验。</p>
