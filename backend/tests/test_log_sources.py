@@ -1,5 +1,6 @@
 import socket
 import threading
+from urllib.parse import urlsplit
 from uuid import uuid4
 
 import pytest
@@ -11,15 +12,13 @@ from test_evidence import started
 
 
 @pytest.fixture
-def external_source():
-    from app.mock_logs import create_mock_logs
+def serve_app():
     servers = []
 
-    def start(scenario='normal'):
+    def start(application):
         sock = socket.socket()
         sock.bind(('127.0.0.1', 0))
         port = sock.getsockname()[1]
-        application = create_mock_logs(scenario)
         server = uvicorn.Server(uvicorn.Config(application, log_level='critical', access_log=False, timeout_graceful_shutdown=.2))
         thread = threading.Thread(target=server.run, kwargs={'sockets': [sock]}, daemon=True)
         thread.start()
@@ -29,16 +28,28 @@ def external_source():
             assert thread.is_alive() and time.monotonic() < limit
             time.sleep(.01)
         servers.append((server, thread, sock))
-        start.observed[port] = application.state
         return f'http://127.0.0.1:{port}'
 
-    start.observed = {}
     yield start
     for server, thread, sock in servers:
         server.should_exit = True
         thread.join(5)
         assert not thread.is_alive()
         sock.close()
+
+
+@pytest.fixture
+def external_source(serve_app):
+    from app.mock_logs import create_mock_logs
+
+    def start(scenario='normal'):
+        application = create_mock_logs(scenario)
+        url = serve_app(application)
+        start.observed[urlsplit(url).port] = application.state
+        return url
+
+    start.observed = {}
+    yield start
 
 
 def test_external_http_collects_redacted_evidence_and_replays(database_url, tmp_path, external_source):
@@ -69,7 +80,7 @@ def test_external_http_collects_redacted_evidence_and_replays(database_url, tmp_
 
 @pytest.mark.parametrize('scenario,count,reason,attempts', [
     ('empty', 0, None, 1), ('unidentified', 3, None, 1),
-    ('conflict', 1, 'parameters', 1), ('invalid', 1, 'parameters', 1),
+    ('conflict', 2, 'adapter_error', 1), ('invalid', 2, 'adapter_error', 1),
     ('permission', 0, 'permission', 1), ('credentials', 0, 'credentials', 1),
     ('parameters', 0, 'parameters', 1), ('limited', 0, 'rate_limited', 1),
     ('temporary', 2, None, 3),
@@ -229,8 +240,8 @@ def test_simulated_identity_cannot_silently_reuse_unmarked_material(database_url
         reply = client.post(evidence.removesuffix('/evidence') + '/queries',
                             headers={**auth, 'Idempotency-Key': str(uuid4())})
         assert reply.status_code == 201
-        assert reply.json()['sources'][0]['reason'] == 'parameters'
-        assert client.get(path).json()['evidence_count'] == 1
+        assert reply.json()['sources'][0]['reason'] == 'adapter_error'
+        assert client.get(path).json()['evidence_count'] == 2
 
 
 def test_historical_simulated_evidence_keeps_provenance_without_source_config(database_url, tmp_path, external_source):
@@ -254,3 +265,86 @@ def test_historical_simulated_evidence_keeps_provenance_without_source_config(da
         assert client.post(path + '/attempts/' + target + '/evidence-references',
                            json={'evidence_id': saved['id']}).status_code == 201
         assert client.get(path).json()['attempts'][-1]['evidence'][0]['source_mode'] == 'simulated'
+
+
+def test_source_endpoint_must_be_explicit_loopback_http():
+    from app.log_sources import SimulatedLogSource
+    for url in ('http://localhost:8091', 'https://127.0.0.1:8091', 'http://user:pass@127.0.0.1:8091',
+                'http://127.0.0.1:8091/v1', 'http://127.0.0.1:8091?x=1', 'http://127.0.0.1', 'http://[::1]:8091'):
+        with pytest.raises(ValueError):
+            SimulatedLogSource(url)
+
+
+def test_source_rejects_malformed_oversized_and_excess_responses(serve_app):
+    import asyncio
+    from datetime import datetime, timezone
+    from fastapi import FastAPI, Response
+    from app.log_sources import SimulatedLogSource
+    from app.queries import SourceFailure
+    starts = datetime(2026, 11, 1, tzinfo=timezone.utc)
+    ends = datetime(2026, 11, 1, 1, tzinfo=timezone.utc)
+
+    def app_for(payload, *, body=None, status=200):
+        application = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+
+        @application.get('/v1/logs')
+        async def logs():
+            return Response(body, status_code=status, media_type='text/plain') if body is not None else payload
+        return application
+
+    incidents = [
+        ('malformed', app_for(None, body='{')),
+        ('oversized', app_for(None, body='x' * 1048577)),
+        ('excess', app_for({'protocol': 'simulated-logs-v1', 'items': [{}] * 101})),
+        ('protocol', app_for({'protocol': 'other-v1', 'items': []})),
+        ('extra', app_for({'protocol': 'simulated-logs-v1', 'items': [], 'more': 1})),
+    ]
+    for label, application in incidents:
+        source = SimulatedLogSource(serve_app(application))
+
+        async def call():
+            return await source.query(source_id='synthetic', starts_at=starts, ends_at=ends)
+
+        with pytest.raises(SourceFailure) as error:
+            asyncio.run(call())
+        assert error.value.reason == 'adapter_error', label
+
+
+def test_source_does_not_follow_redirects_or_read_error_bodies(serve_app):
+    import asyncio
+    from datetime import datetime, timezone
+    from fastapi import FastAPI, Response
+    from app.log_sources import SimulatedLogSource
+    from app.queries import SourceFailure
+    starts, ends = datetime(2026, 11, 1, tzinfo=timezone.utc), datetime(2026, 11, 1, 1, tzinfo=timezone.utc)
+    hits = []
+    target = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+
+    @target.get('/v1/logs')
+    async def target_logs():
+        hits.append(True)
+        return {'protocol': 'simulated-logs-v1', 'items': []}
+
+    target_url = serve_app(target)
+    redirect = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+
+    @redirect.get('/v1/logs')
+    async def redirect_logs():
+        return Response(status_code=307, headers={'Location': target_url + '/v1/logs'})
+
+    failing = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
+
+    @failing.get('/v1/logs')
+    async def failing_logs():
+        return Response('synthetic-secret', status_code=500, media_type='text/plain')
+
+    for url in (serve_app(redirect), serve_app(failing)):
+        async def call():
+            return await SimulatedLogSource(url).query(source_id='synthetic', starts_at=starts, ends_at=ends)
+
+        with pytest.raises(SourceFailure) as error:
+            asyncio.run(call())
+        assert error.value.reason == 'adapter_error'
+        assert 'synthetic-secret' not in str(error.value)
+        assert 'synthetic-secret' not in repr(error.value)
+    assert hits == []

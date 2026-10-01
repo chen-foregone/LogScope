@@ -141,6 +141,7 @@ def query_router(engine, credential, sources, clock, schedule):
             if chunk:
                 raise HTTPException(422, '查询不接受请求体、来源地址或错误分类，仅使用本轮快照')
         collection_failed = False
+        collection_source_id = None
         try:
             with engine.begin() as connection:
                 connection.execute(select(investigations.c.id).where(investigations.c.id == investigation_id).with_for_update()).first()
@@ -286,6 +287,7 @@ def query_router(engine, credential, sources, clock, schedule):
                         if isinstance(output, CollectedLogs):
                             from app.evidence import Material, save_material
                             from pydantic import ValidationError
+                            rejected = False
                             for item in output.items:
                                 if stop_requested():
                                     raise QueryCanceled()
@@ -304,10 +306,19 @@ def query_router(engine, credential, sources, clock, schedule):
                                 except HTTPException as error:
                                     if error.status_code == 503:
                                         collection_failed = True
+                                        collection_source_id = source_id
                                     if error.status_code in (403, 503):
                                         raise
-                                    raise SourceFailure('parameters') from None
+                                    rejected = True
+                                    continue
                                 await asyncio.sleep(0)
+                            if rejected:
+                                # 单条拒绝不撤销已提交材料，也不丢弃后续合法记录；来源整体不宣布成功。
+                                state.update(state='unavailable', reason='adapter_error')
+                                state['failures'].append({'reason': 'adapter_error', 'attempt': number,
+                                    'timeout_seconds': 30, 'wait_seconds': None, 'retry_after_seconds': None})
+                                progress()
+                                break
                         elif output is not None:
                             raise SourceFailure('adapter_error')
                     except QueryCanceled:
@@ -400,8 +411,8 @@ def query_router(engine, credential, sources, clock, schedule):
                         elif owned and collection_failed:
                             # HTTP collection has exited; preserve evidence but do not pin its source forever.
                             result['status'] = 'failed'
-                            for state in result['sources']:
-                                if state['state'] in {'pending', 'querying', 'waiting'}:
+                            for source_id, state in zip(row['source_ids'], result['sources']):
+                                if source_id == collection_source_id and state['state'] not in {'skipped', 'unavailable'}:
                                     state.update(state='unavailable', reason='adapter_error')
                             release_source_gates(connection, identity, row['source_ids'], result['sources'])
                             connection.execute(update(queries).where(queries.c.id == identity).values(active=False, material=result))

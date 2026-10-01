@@ -39,16 +39,17 @@ class SimulatedLogSource:
                     async for chunk in reply.aiter_bytes():
                         body.extend(chunk)
                         if len(body) > 1048576:
-                            raise SourceFailure('parameters')
+                            raise SourceFailure('adapter_error')
             output = json.loads(body)
             if (not isinstance(output, dict) or set(output) != {'protocol', 'items'}
                     or output['protocol'] != 'simulated-logs-v1' or not isinstance(output['items'], list)
                     or len(output['items']) > 100):
-                raise SourceFailure('parameters')
+                raise SourceFailure('adapter_error')
             return CollectedLogs(output['items'])
         except httpx.TimeoutException:
             raise SourceFailure('timeout') from None
         except httpx.RequestError:
             raise SourceFailure('network') from None
         except (ValueError, TypeError):
-            raise SourceFailure('parameters') from None
+            # 来源可达但响应不符合受控协议；不是查询参数错误。
+            raise SourceFailure('adapter_error') from None

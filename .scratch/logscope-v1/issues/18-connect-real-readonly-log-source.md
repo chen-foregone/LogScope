@@ -47,6 +47,6 @@ Blocked by: 04, 06
 
 2026-11-05 完成本期模拟接入范围，四张子工单均已解决并附证据。实现包括：独立回环 HTTP 模拟服务 `backend/app/mock_logs.py`（合成数据、只读 GET、启动参数选择 normal/empty/unidentified/conflict/invalid/permission/credentials/parameters/temporary/limited/timeout，不提供业务故障注入接口）；后端适配器 `backend/app/log_sources.py`（显式回环 origin、无重定向/代理、1MiB/100 条边界、受控错误分类）；`SIMULATED_LOGS_URL` 显式配置才为服务目录来源构造适配器，默认关闭；`query_router` 复用既有查询编排、来源闸门、重试/时限/停止协议，并把响应逐条送入既有 `evidence.save_material`；查询状态持久化 `mode/protocol`，证据持久化 `source_mode=simulated`，UI 明确标识模拟来源，历史记录不因当前配置变化误标。
 
-验证：`backend/tests/test_log_sources.py` **16 passed**、`tests/test_log_source_ui.py` **3 passed**、`npm run build`（vue-tsc + Vite）通过；完整 `pytest backend/tests tests` 首次 **488 passed / 5 failed / 493 total**，5 项均为执行 PATH 缺 `docker` 导致既有 `pg_dump` 审计用例的环境性失败，含 Docker PATH 复跑该 5 项 **5 passed**，合并 **493 passed**。运行说明、模块学习总结及 8 道不附答案问题见 `docs/simulated-log-source.md`。
+验证：`backend/tests/test_log_sources.py` **19 passed**、`tests/test_log_source_ui.py` **3 passed**、`npm run build`（vue-tsc + Vite）通过；完整 `pytest backend/tests tests` 为 **496 passed in 1479.44s，退出 0**（PATH 含 `docker`、连接级禁用并行查询、独立端口）。双轴复查后补强：端点仅接受显式回环 HTTP、不跟随重定向/不读错误体、1MiB/100 条与协议形状边界测试；协议/材料不合契约归 `adapter_error` 而非参数错误；单条拒绝不丢弃后续合法记录；503 清理只标记当前来源，不虚构未查询来源状态。运行说明、模块学习总结及 8 道不附答案问题见 `docs/simulated-log-source.md`。
 
 **未完成/未证明**：以上真实来源验收条目仍未勾选，A33 未完成。真实供应商协议、稳定记录身份、只读账号权限、真实错误输出脱敏及真实限流契约均未验证；模拟服务的 POST/PUT/DELETE 405 只证明模拟协议，不证明真实账号只读授权。后续取得真实访问契约后须在本工单或新工单补验，不能以本期结果勾选 A33。

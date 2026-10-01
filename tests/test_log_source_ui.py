@@ -6,7 +6,7 @@ import pytest
 from playwright.sync_api import sync_playwright, expect
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'backend' / 'tests'))
-from test_log_sources import external_source
+from test_log_sources import external_source, serve_app
 from test_attempts import configured_client
 from test_evidence import started
 from test_investigations import database_url
@@ -18,7 +18,7 @@ def evidence_executor(database_url):
     return database_url
 
 
-@pytest.mark.parametrize('scenario,count', [('normal', 2), ('unidentified', 3), ('invalid', 1)])
+@pytest.mark.parametrize('scenario,count', [('normal', 2), ('unidentified', 3), ('invalid', 2)])
 def test_simulated_http_evidence_visible_after_reload(evidence_executor, tmp_path, external_source, scenario, count):
     from app.log_sources import SimulatedLogSource
     credential = uuid4().hex
@@ -61,7 +61,7 @@ def test_simulated_http_evidence_visible_after_reload(evidence_executor, tmp_pat
                     if scenario == 'unidentified':
                         expect(page.get_by_role('status').filter(has_text='可能重复')).to_be_visible()
                     if scenario == 'invalid':
-                        expect(page.get_by_text('原因：查询参数无效')).to_be_visible()
+                        expect(page.get_by_text('原因：适配器能力或返回不符合受控契约')).to_be_visible()
                         expect(page.get_by_text('缺失来源：', exact=False)).to_be_visible()
                     assert 'synthetic-secret' not in page.locator('body').inner_text()
                     page.reload()
