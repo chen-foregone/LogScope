@@ -1,5 +1,5 @@
 # 15: 统一筛选、更新时间、分页及四项真实概况
-Status: claimed
+Status: resolved
 Type: task
 Blocked by: 11, 12, 14
 
@@ -53,7 +53,7 @@ HTTP API + 真实 PostgreSQL 构造经业务API形成的多页混合集，验证
 - UI fixture supports UI_PORT/UI_API_PORT and optional UI_PREVIEW=1. Vite proxy target is configurable for isolated ports; defaults stay 5173/8000. Production preview is used because development resource loading stalled in this environment.
 
 ## Answer
-Implementation is delivered; final all-green acceptance is pending shared PostgreSQL recovery. Status stays claimed rather than claiming a fully verified resolution.
+Implementation and issue15 acceptance are complete. The PostgreSQL recovery blocker has been cleared for this scope. Full-suite results are recorded separately below; resolving issue15 does not claim that unrelated concurrent work passed.
 
 ### Verification evidence
 - First TDD slices observed red for invalid pagination and non-injected creation clock, then green.
@@ -71,3 +71,13 @@ Review is static plus the executed tests above, not a claim that the final envir
 
 ### Re-run after database recovery
 Use PowerShell with PYTHONPATH=backend. Run `.venv/Scripts/python.exe -m pytest backend/tests tests -q -p no:cacheprovider --tb=short` after building with `node_modules/.bin/vue-tsc.cmd -b` and `node node_modules/vite/bin/vite.js build`. Set UI_PREVIEW=1, UI_PORT=5273 and UI_API_PORT=8100 for isolated existing UI tests. Other tasks' dedicated UI tests may have their own fixed-port assumptions; do not run those concurrently on the same ports.
+
+### 2026-11-05 - Final scope acceptance
+- User authorized continuing issue15 only, preserving unrelated changes, and explicitly confirmed that concurrent retention/archive work need not block this ticket's closure.
+- Re-ran the actual PostgreSQL HTTP suite: `backend/tests/test_investigation_listing.py`, 27 passed in 70.30s. The initial sandboxed attempt had 18 passed and 9 temporary-directory permission errors; the approved unrestricted rerun passed all 27, without changing tests.
+- Re-ran actual Chromium/API/PostgreSQL listing E2E: `tests/test_ui.py -k listing_`, 2 passed in 19.14s, 70 deselected. Covers full-match overview, time snapshot pagination, refresh/reload, mobile empty results, and stale route/search responses.
+- `vue-tsc -b`, production Vite build, and `git diff --check` passed. Existing bundle-size warning remains; no runtime dependency or database migration was added for issue15.
+- Executed the complete existing suite once: 492 passed, 4 failed in 1795.72s. All four failures are `tests/test_retention_ui.py::test_retention_ui_uses_real_api_and_refresh_does_not_extend` parameterizations. During the run, unrelated archive work changed retention from creation-based expiry to archive-based expiry, while these fixtures still arranged creation-based expiry. These are actual failed assertions, not passing tests or a PostgreSQL recovery failure. No retention/archive files were changed to mask them.
+- Test environment: `PYTHONPATH=backend`, `PGOPTIONS=-c max_parallel_workers_per_gather=0`, `UI_PREVIEW=1`, `UI_PORT=5273`, `UI_API_PORT=8100`. This is connection-local configuration; no database restart, global setting change, or schema deletion was performed.
+- Independent parallel Standards and Spec reviews used verified base `0a8d649`, restricted to issue15 hunks introduced by `72c8f74` and their committed HEAD counterparts. Standards: 0 actionable findings. Spec: 0 actionable findings. Uncommitted archive behavior was excluded from this review, and the full run is not a fixed-version all-green acceptance of other tickets.
+- Closure changes only this ticket and its map entry. Existing code and untracked diagnostic artifacts belonging to other work remain untouched and excluded from the commit.
