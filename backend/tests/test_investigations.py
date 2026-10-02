@@ -152,9 +152,8 @@ def test_create_pending_survives_new_application(database_url):
         assert record["service"] is None
         assert record["created_at"] == record["updated_at"]
         created = datetime.fromisoformat(record["created_at"].replace("Z", "+00:00"))
-        expires = datetime.fromisoformat(record["retention_expires_at"].replace("Z", "+00:00"))
+        assert record['retention_expires_at'] is None
         assert created.utcoffset().total_seconds() == 0
-        assert (expires - created).total_seconds() == 2592000
     with client_for(database_url) as restarted:
         assert restarted.get(f'/api/investigations/{record["id"]}').json() == record
         listing = restarted.get("/api/investigations").json()

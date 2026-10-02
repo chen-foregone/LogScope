@@ -30,7 +30,7 @@ def confirm_stop(connection, investigation_id, attempt_id, now):
         end_reason='user_canceled' if row['cancel_requested_at'] else 'attempt_deadline_exceeded',
         stop_confirmed_at=now, stop_confirmation='controlled_queries_exited_and_writes_fenced'))
     connection.execute(update(investigations).where(investigations.c.id == investigation_id).values(
-        updated_at=now, retention_expires_at=now + timedelta(days=30)))
+        updated_at=now, retention_expires_at=None))
 
 
 def cancellation_router(engine, clock):

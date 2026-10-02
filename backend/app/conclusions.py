@@ -146,7 +146,7 @@ def conclusion_router(engine, credential, clock):
                     connection.execute(update(attempts).where(attempts.c.id == attempt_id).values(
                         status='已完成', result='已确认根因' if payload.kind == 'confirmed' else '未确定根因', ended_at=now, end_reason='normal_completion'))
                     connection.execute(update(executions).where(executions.c.id == execution_id).values(valid=False))
-                    values['retention_expires_at'] = now + timedelta(days=30)
+                    values['retention_expires_at'] = None
                 connection.execute(update(investigations).where(investigations.c.id == investigation_id).values(**values))
                 finalize_deadline(connection, row, clock, pending)
             return result

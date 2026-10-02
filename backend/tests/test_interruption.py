@@ -619,7 +619,7 @@ def test_confirmation_transaction_failure_keeps_fence_and_material(database_url,
         ended = await_view(observer, path, lambda v: v['status'] == '失败')
         assert ended['attempts'][0]['lost_requested_at'] == waiting['attempts'][0]['lost_requested_at']
         ended_at = datetime.fromisoformat(ended['attempts'][0]['ended_at'].replace('Z', '+00:00'))
-        assert datetime.fromisoformat(ended['retention_expires_at'].replace('Z', '+00:00')) == ended_at + timedelta(days=30)
+        assert ended['retention_expires_at'] is None
 
 
 @pytest.mark.parametrize('other_event', ['deadline', 'process_exit'])

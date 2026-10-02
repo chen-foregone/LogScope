@@ -10,7 +10,6 @@ from sqlalchemy import Column, DateTime, MetaData, String, Table, Uuid, Integer,
 
 from app.investigation_listing import (InvestigationPageQuery, InvestigationFilterQuery, InvestigationPage,
     InvestigationOverviewResponse, read_investigation_listing)
-
 from app.retention import RetentionView
 
 metadata = MetaData()
@@ -26,6 +25,8 @@ investigations = Table(
     Column("created_at", DateTime(timezone=True), nullable=False),
     Column("updated_at", DateTime(timezone=True), nullable=False),
     Column("retention_expires_at", DateTime(timezone=True), nullable=True),
+    Column("archived_at", DateTime(timezone=True)),
+    Column("archive_version", Integer, nullable=False),
 )
 
 
@@ -60,11 +61,8 @@ class InvestigationView(BaseModel):
     updated_at: datetime
     retention_expires_at: datetime | None
     retention: RetentionView
-
-
-class InvestigationList(BaseModel):
-    items: list[InvestigationView]
-    total: int
+    archived_at: datetime | None
+    archive_version: int
 
 
 def representation(row, attempts=None):
@@ -88,7 +86,8 @@ def investigation_router(engine, clock):
                idempotency_key: Annotated[UUID, Header()]):
         now = clock()
         values = dict(id=uuid4(), request_key=idempotency_key, **payload.model_dump(),
-                      created_at=now, updated_at=now, retention_expires_at=now + timedelta(days=30))
+                      created_at=now, updated_at=now, retention_expires_at=None,
+                      archived_at=None, archive_version=0)
         with engine.begin() as connection:
             row = connection.execute(
                 pg_insert(investigations).values(**values)

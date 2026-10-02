@@ -137,7 +137,7 @@ def test_query_failure_reopens_with_adjusted_service_and_isolated_identity(datab
         now += timedelta(minutes=1)
         assert client.post(new_conclusions, json=proposal(), headers=query_headers).status_code == 201
         ended = client.get(path).json()
-        assert ended['retention_expires_at'] == '2026-12-04T01:01:00Z'
+        assert ended['retention_expires_at'] is None
         assert ended['updated_at'] == '2026-11-04T01:01:00Z'
         assert ended['attempts'][0] == before['attempts'][0]
         assert client.get('/api/investigations').json()['items'] == [summary(ended)]

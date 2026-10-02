@@ -2,6 +2,8 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import InvestigationListPanel from './components/InvestigationListPanel.vue'
 import RetentionStatus from './components/RetentionStatus.vue'
+import ArchiveActions from './components/ArchiveActions.vue'
+import CleanupActions from './components/CleanupActions.vue'
 import { useInvestigationList } from './composables/useInvestigationList'
 import { Plus, ShieldCheck, TerminalSquare, Command } from 'lucide-vue-next'
 
@@ -115,7 +117,9 @@ type Investigation = {
   created_at: string
   updated_at: string
   retention_expires_at: string | null
-  retention: { phase: 'running' | 'retained' | 'expiring' | 'awaiting_cleanup' | 'inconsistent'; issue: string | null }
+  archived_at: string | null
+  archive_version: number
+  retention: { phase: 'running' | 'retained' | 'archived' | 'expiring' | 'awaiting_cleanup' | 'inconsistent'; issue: string | null }
 }
 const services = ref<{ id: string; name: string }[]>([])
 const serviceId = ref('')
@@ -249,6 +253,7 @@ function clearStart(id: string, pending: PendingStart) {
 }
 
 const listing = useInvestigationList()
+function afterCleanup() { location.hash = listHash }
 const { draft: listDraft, data: listData, busy: listBusy, error: listError } = listing
 const investigations = computed(() => listData.value?.items ?? [])
 const directoryError = ref(false)
@@ -471,6 +476,8 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
             <div><dt>最后更新时间</dt><dd>{{ displayTime(selected.updated_at) }}</dd></div>
           </dl>
           <RetentionStatus :retention="selected.retention" :expires-at="selected.retention_expires_at" />
+          <ArchiveActions :key="selected.id" :investigation-id="selected.id" :archived-at="selected.archived_at" :version="selected.archive_version" :running="selected.attempts.some(item => item.status === '调查中')" @changed="loadPage" />
+          <CleanupActions :key="'cleanup-' + selected.id" :investigation-id="selected.id" :running="selected.attempts.some(item => item.status === '调查中')" @removed="afterCleanup" />
           <p v-if="startBlocked" role="alert" class="form-error">{{ storageWarning }}</p>
           <section data-testid="severity-panel" aria-label="业务影响评估">
             <h3>严重程度 · 业务影响</h3>
@@ -583,7 +590,7 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
             </section>
           </template>
           <p v-else>尚无调查尝试，未启动排查。</p>
-          <template v-if="pendingStart || !selected.attempts.some(attempt => attempt.status === '调查中')">
+          <template v-if="!selected.archived_at && (pendingStart || !selected.attempts.some(attempt => attempt.status === '调查中'))">
             <h3 v-if="pendingStart">启动结果待确认</h3>
             <h3 v-else-if="selected.attempts.length">手动发起新一轮</h3>
             <p v-if="pendingStart" role="status">原请求的服务和范围已锁定。刷新或看到终态不代表已确认本次启动；请重试原请求并读取当前结果，不会额外创建一轮。确认成功后才可显式发起下一轮。待确认信息仅保存在当前标签页会话，请勿清除站点存储或关闭标签页。</p>
@@ -603,7 +610,7 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
               <p v-if="startError" role="alert" class="form-error">{{ startError }}</p>
               <el-button type="primary" native-type="submit" :loading="starting" :disabled="startBlocked || (!pendingStart && (!serviceId || !services.some(service => service.id === serviceId)))">{{ pendingStart ? '重试原请求并确认结果' : selected.attempts.length ? '启动新一轮' : '启动调查' }}</el-button>
             </form>
-            <p class="page-subtitle">无轮记录从创建起保留 30 天；查看不会延长期限。</p>
+            <p class="page-subtitle">未归档调查持续保留；归档后才起算 30 天清除期限。</p>
           </template>
         </section>
         <InvestigationListPanel v-else-if="!error" v-model:draft="listDraft" :data="listData" :busy="listBusy" :error="listError" :services="services" :directory-error="directoryError" @apply="listing.apply()" @refresh="listing.refresh()" @page="listing.page" @open="openDetail" />

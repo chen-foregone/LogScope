@@ -33,8 +33,7 @@ def test_finish_without_evidence_is_completed_not_root_cause(database_url, tmp_p
         assert attempt['conclusion']['evidence_ids'] == []
         assert after['updated_at'] > before['updated_at']
         ended = datetime.fromisoformat(attempt['ended_at'].replace('Z', '+00:00'))
-        expires = datetime.fromisoformat(after['retention_expires_at'].replace('Z', '+00:00'))
-        assert expires == ended + timedelta(days=30)
+        assert after['retention_expires_at'] is None
         assert client.get(path).json() == after
         assert client.get('/api/investigations').json()['items'] == [summary(after)]
         repeated = client.post(endpoint, json=proposal(), headers=headers)
@@ -478,7 +477,7 @@ def test_clock_and_create_start_replays_return_completed_projection(database_url
                            headers={**auth, 'Idempotency-Key': str(uuid4())}).status_code == 201
         after = client.get(path).json()
         assert after['updated_at'] == after['attempts'][0]['ended_at'] == '2026-11-03T06:30:00Z'
-        assert after['retention_expires_at'] == '2026-12-03T06:30:00Z'
+        assert after['retention_expires_at'] is None
         assert client.post('/api/investigations', json={'title': '启动调查'}, headers={'Idempotency-Key': create_key}).json() == after
         assert client.post(path + '/attempts', json={'service_id': 'orders'}, headers=start_headers).json() == after
 

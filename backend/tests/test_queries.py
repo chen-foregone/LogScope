@@ -733,8 +733,7 @@ def test_failure_keeps_evidence_conclusion_history_and_thirty_day_retention(data
         assert attempt['evidence'] == [saved]
         assert attempt['conclusions'] == [conclusion]
         assert attempt['result'] is None
-        assert datetime.fromisoformat(after['retention_expires_at'].replace('Z', '+00:00')) == (
-            datetime.fromisoformat(attempt['ended_at'].replace('Z', '+00:00')) + timedelta(days=30))
+        assert after['retention_expires_at'] is None
         assert client.post(evidence, json=material(), headers=auth).status_code == 403
         assert client.post(evidence.removesuffix('/evidence') + '/conclusions', json=proposal(expected_version=1),
             headers={**auth, 'Idempotency-Key': str(uuid4())}).status_code == 403

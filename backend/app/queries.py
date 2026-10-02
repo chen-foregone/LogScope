@@ -383,7 +383,7 @@ def query_router(engine, credential, sources, clock, schedule):
                     connection.execute(update(attempts).where(attempts.c.id == attempt_id).values(
                         status='失败', result=None, ended_at=now, end_reason='necessary_sources_unavailable'))
                     connection.execute(update(executions).where(executions.c.id == execution_id).values(valid=False))
-                    values['retention_expires_at'] = now + timedelta(days=30)
+                    values['retention_expires_at'] = None
                 connection.execute(update(investigations).where(investigations.c.id == investigation_id).values(**values))
                 finalize_deadline(connection, current, lambda: max(clock(), row['deadline_at'])
                     if asyncio.get_running_loop().time() >= total_end else clock(), pending)

@@ -71,7 +71,7 @@ def coordinate_interruptions(engine, clock):
                         end_reason=reason, stop_confirmed_at=now, stop_confirmation='process_exit_and_writes_fenced',
                         interruption_confirmation={'processes': observations}))
                     connection.execute(update(investigations).where(investigations.c.id == investigation_id).values(
-                        updated_at=now, retention_expires_at=now + timedelta(days=30)))
+                        updated_at=now, retention_expires_at=None))
             except Exception:
                 # 仅回滚本候选确认；连接失效或外层提交失败仍向上传播，不能假报确认成功。
                 if connection.invalidated:

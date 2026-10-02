@@ -538,7 +538,7 @@ def test_idle_cancel_is_confirmed_persistent_idempotent_and_fences_replays(datab
         assert attempt['result'] is None
         assert attempt['evidence'] == [saved]
         assert len(attempt['conclusions']) == 1
-        assert after['retention_expires_at'] is not None
+        assert after['retention_expires_at'] is None
         assert client.post(cancel).json() == after
         assert client.post(evidence, json=material(), headers=auth).status_code == 403
         assert client.post(endpoint + '/conclusions', json=analysis, headers=headers).status_code == 403

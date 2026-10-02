@@ -28,11 +28,14 @@ def create_app(database_url: str | None = None, *, services_file=None, executor_
     @asynccontextmanager
     async def lifespan(app):
         coordinator = asyncio.create_task(deadline_coordinator(engine, business_clock, deadline_schedule or DeadlineSchedule()))
+        from app.cleanup import cleanup_coordinator
+        cleanup_task = asyncio.create_task(cleanup_coordinator(engine, business_clock))
         try:
             yield
         finally:
             coordinator.cancel()
-            await asyncio.gather(coordinator, return_exceptions=True)
+            cleanup_task.cancel()
+            await asyncio.gather(coordinator, cleanup_task, return_exceptions=True)
             engine.dispose()
 
     application = FastAPI(title=settings.app_name, version="0.1.0", lifespan=lifespan)
@@ -77,6 +80,10 @@ def create_app(database_url: str | None = None, *, services_file=None, executor_
     application.include_router(service_router(services), prefix=settings.api_prefix)
     application.include_router(health_router, prefix=settings.api_prefix)
     application.include_router(investigation_router(engine, business_clock), prefix=settings.api_prefix)
+    from app.archive import archive_router
+    application.include_router(archive_router(engine, business_clock), prefix=settings.api_prefix)
+    from app.cleanup import cleanup_router
+    application.include_router(cleanup_router(engine, business_clock), prefix=settings.api_prefix)
 
     @application.get("/")
     def root() -> dict[str, str]:

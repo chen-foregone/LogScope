@@ -353,7 +353,7 @@ def test_expired_evidence_is_rejected_but_timeout_fence_and_confirmation_persist
         assert attempt['evidence'] == [saved]
         assert attempt['stop_confirmation'] == 'controlled_queries_exited_and_writes_fenced'
         assert attempt['ended_at'] == after['updated_at'] == '2026-11-03T12:10:00Z'
-        assert after['retention_expires_at'] == '2026-12-03T12:10:00Z'
+        assert after['retention_expires_at'] is None
         assert client.get(path).json() == after
 
 

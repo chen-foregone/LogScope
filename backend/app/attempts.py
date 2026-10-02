@@ -104,8 +104,15 @@ def current_view(connection, row, now):
     from app.retention import retention_view
     views = attempt_views(connection, row['id'])
     history, suggestions = severity_view(connection, row['id'], row['severity_version'], views[-1] if views else None)
+    retention = retention_view(row, views, now)
+    if retention.phase == 'awaiting_cleanup':
+        from app.cleanup import owned_scope, check_scope
+        try:
+            check_scope(connection, row, owned_scope(connection, row['id']))
+        except HTTPException as exc:
+            retention.issue = str(exc.detail)
     return representation(row, views) | {'severity_history': history, 'severity_suggestions': suggestions,
-                                        'retention': retention_view(row, views, now).model_dump()}
+                                        'retention': retention.model_dump()}
 
 
 class ControlledExecutionAdapter:
@@ -146,6 +153,8 @@ def attempt_router(engine, services, adapter, clock):
                     raise HTTPException(409, "启动请求标识已用于不同范围")
                 response.status_code = 200
                 return current_view(connection, row, clock())
+            if row['archived_at'] is not None:
+                raise HTTPException(409, '调查已归档，请先取消归档再启动')
             if connection.execute(select(attempts.c.id).where(
                     attempts.c.investigation_id == investigation_id, attempts.c.status == "调查中")).first():
                 raise HTTPException(409, "已有调查中轮次，不能修改服务或范围，也不能重复启动")

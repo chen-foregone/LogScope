@@ -50,7 +50,7 @@ def test_creation_uses_business_clock_and_replay_or_reads_do_not_extend_times(da
         record = response.json()
         assert record['created_at'] == '2026-11-04T00:00:00Z'
         assert record['updated_at'] == '2026-11-04T00:00:00Z'
-        assert record['retention_expires_at'] == '2026-12-04T00:00:00Z'
+        assert record['retention_expires_at'] is None
 
         now = datetime(2026, 11, 5, 0, 0, tzinfo=timezone.utc)
         replay = client.post('/api/investigations', json={'title': 'Clock boundary'}, headers=headers)

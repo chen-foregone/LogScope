@@ -9,7 +9,7 @@ from sqlalchemy import create_engine, update
 from test_ui import BASE
 
 
-@pytest.mark.parametrize('age,notice', [(0, '正常保留'), (24, '即将到期'), (31, '待确认清理'), (None, '保留状态异常')])
+@pytest.mark.parametrize('age,notice', [(0, '已归档'), (24, '归档即将到期'), (31, '归档已到期'), (None, '保留状态异常')])
 def test_retention_ui_uses_real_api_and_refresh_does_not_extend(evidence_executor, age, notice):
     with httpx.Client(base_url=BASE, trust_env=False, timeout=20) as client, sync_playwright() as p:
         record = client.post('/api/investigations', json={'title': '保留阶段-' + uuid4().hex[:8]},
@@ -20,7 +20,7 @@ def test_retention_ui_uses_real_api_and_refresh_does_not_extend(evidence_executo
         engine = create_engine(evidence_executor.database_url)
         with engine.begin() as connection:
             connection.execute(update(investigations).where(investigations.c.id == UUID(record['id']))
-                               .values(created_at=created, retention_expires_at=None if age is None else created + timedelta(days=30)))
+                               .values(archived_at=created, retention_expires_at=None if age is None else created + timedelta(days=30)))
         engine.dispose()
         path = '/api/investigations/' + record['id']
         before = client.get(path).json()
@@ -32,7 +32,7 @@ def test_retention_ui_uses_real_api_and_refresh_does_not_extend(evidence_executo
             expect(panel).to_contain_text(notice)
             if age is None:
                 expect(page.get_by_text('运行中不清理；结束后计算保留期', exact=True)).to_have_count(0)
-            expect(panel).to_contain_text('首版不提供延期')
+            expect(panel).to_contain_text('查看不续期')
             page.reload()
             expect(panel).to_contain_text(notice)
             assert client.get(path).json() == before
