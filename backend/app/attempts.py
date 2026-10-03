@@ -93,6 +93,10 @@ def attempt_views(connection, investigation_id):
                'lost_requested_at': row['lost_requested_at'], 'interruption_confirmation': row['interruption_confirmation'],
                'execution_phase': 'stopped' if row['status'] != '调查中' else ('confirming_execution' if row['lost_requested_at'] else 'stopping' if row['cancel_requested_at'] else 'timeout_stopping' if row['timeout_requested_at'] else 'running')})
     for view in views:
+        from app.agent_storage import run_view
+        agent = run_view(connection, view['id'])
+        if agent is not None:
+            view['agent_run'] = agent
         for key, value in view.items():
             if isinstance(value, datetime):
                 view[key] = value.astimezone(timezone.utc).isoformat().replace('+00:00', 'Z')

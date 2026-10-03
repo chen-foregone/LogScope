@@ -11,7 +11,9 @@ from app.core.config import settings
 from app.investigations import investigation_router
 
 
-def create_app(database_url: str | None = None, *, services_file=None, executor_credential=None, execution_adapter=None, clock=None, query_sources=None, query_schedule=None, deadline_schedule=None) -> FastAPI:
+def create_app(database_url: str | None = None, *, services_file=None, executor_credential=None, execution_adapter=None, clock=None, query_sources=None, query_schedule=None, deadline_schedule=None, agent_settings=None, agent_model=None) -> FastAPI:
+    from app.core.config import AgentSettings
+    agent_config = agent_settings or AgentSettings()
     from app.services import load_services, service_router
     services = load_services(services_file if services_file is not None else settings.services_file)
     if query_sources is None and settings.simulated_logs_url:
@@ -30,11 +32,24 @@ def create_app(database_url: str | None = None, *, services_file=None, executor_
         coordinator = asyncio.create_task(deadline_coordinator(engine, business_clock, deadline_schedule or DeadlineSchedule()))
         from app.cleanup import cleanup_coordinator
         cleanup_task = asyncio.create_task(cleanup_coordinator(engine, business_clock))
+        model = agent_model
+        agent_task = None
+        if agent_config.enabled:
+            from app.agent_model import BailianModel
+            from app.agent_runner import agent_coordinator
+            model = model or BailianModel(agent_config)
+            agent_task = asyncio.create_task(agent_coordinator(engine, agent_config, model,
+                query_sources or {}, query_schedule or QuerySchedule(), business_clock))
         try:
             yield
         finally:
             coordinator.cancel()
             cleanup_task.cancel()
+            if agent_task:
+                agent_task.cancel()
+                await asyncio.gather(agent_task, return_exceptions=True)
+            if model is not None and agent_model is None:
+                await model.close()
             await asyncio.gather(coordinator, cleanup_task, return_exceptions=True)
             engine.dispose()
 
@@ -73,7 +88,8 @@ def create_app(database_url: str | None = None, *, services_file=None, executor_
     application.include_router(evidence_router(engine, executor_credential if executor_credential is not None else settings.executor_credential,
         clock or (lambda: datetime.now(timezone.utc))), prefix=settings.api_prefix)
     application.include_router(execution_router(engine, executor_credential if executor_credential is not None else settings.executor_credential, business_clock), prefix=settings.api_prefix)
-    adapter = execution_adapter or ControlledExecutionAdapter()
+    from app.agent_runner import AgentExecutionAdapter
+    adapter = execution_adapter or (AgentExecutionAdapter(agent_config) if agent_config.enabled else ControlledExecutionAdapter())
     from app.cancellation import cancellation_router
     application.include_router(cancellation_router(engine, clock or (lambda: datetime.now(timezone.utc))), prefix=settings.api_prefix)
     application.include_router(attempt_router(engine, services, adapter, clock or (lambda: datetime.now(timezone.utc))), prefix=settings.api_prefix)

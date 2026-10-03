@@ -37,7 +37,7 @@ def coordinate_interruptions(engine, clock):
             if row['status'] != '调查中':
                 continue
             execution = connection.execute(select(executions).where(executions.c.attempt_id == attempt_id)).mappings().one()
-            if execution['stop_protocol'] != 'controlled_queries_v1':
+            if execution['stop_protocol'] not in ('controlled_queries_v1', 'agent_graph_v1'):
                 continue
             observation = observe_process(execution['process_identity'])
             if row['lost_requested_at'] is None:
@@ -64,6 +64,10 @@ def coordinate_interruptions(engine, clock):
                         material = dict(query['material'], status='interrupted')
                         connection.execute(update(queries).where(queries.c.id == query['id']).values(active=False, material=material))
                     now = clock()
+                    if execution['stop_protocol'] == 'agent_graph_v1':
+                        from app.agent_storage import runs
+                        connection.execute(update(runs).where(runs.c.execution_id == execution['id']).values(
+                            active=False, phase='stopped', reason='process_exited', updated_at=now))
                     reason = ('user_canceled' if row['cancel_requested_at'] else 'attempt_deadline_exceeded'
                               if row['timeout_requested_at'] else 'service_interrupted')
                     connection.execute(update(attempts).where(attempts.c.id == attempt_id).values(

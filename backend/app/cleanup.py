@@ -46,6 +46,11 @@ def owned_scope(connection, investigation_id):
         (redaction_keys, redaction_keys.c.investigation_id == investigation_id),
         (investigations, investigations.c.id == investigation_id),
     ]
+    from app.agent_storage import runs, calls, checkpoints
+    run_ids = select(runs.c.id).where(runs.c.attempt_id.in_(rounds))
+    predicates = [(checkpoints, checkpoints.c.run_id.in_(run_ids)),
+                  (calls, calls.c.run_id.in_(run_ids)),
+                  (runs, runs.c.attempt_id.in_(rounds))] + predicates
     scope = [(table, predicate, [dict(row) for row in connection.execute(
         select(table).where(predicate)).mappings()]) for table, predicate in predicates]
     return scope
@@ -60,6 +65,8 @@ def check_scope(connection, row, scope):
             any(item['active'] for item in rows['controlled_queries']) or
             any(item['valid'] for item in rows['controlled_executions'])):
         raise HTTPException(409, '运行轮次、执行或查询尚未结束，不能清除')
+    if any(item['active'] for item in rows.get('agent_runs', [])):
+        raise HTTPException(409, 'Agent 尚未安全退出，不能清除')
     round_ids = {item['id'] for item in rows['attempts']}
     evidence_ids = {item['id'] for item in rows['evidence']}
     conclusion_ids = {item['id'] for item in rows['conclusions']}

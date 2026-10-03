@@ -2,6 +2,7 @@
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import InvestigationListPanel from './components/InvestigationListPanel.vue'
 import RetentionStatus from './components/RetentionStatus.vue'
+import AgentRunStatus from './components/AgentRunStatus.vue'
 import ArchiveActions from './components/ArchiveActions.vue'
 import CleanupActions from './components/CleanupActions.vue'
 import { useInvestigationList } from './composables/useInvestigationList'
@@ -17,6 +18,7 @@ type Evidence = {
   source_access?: string; verification_history?: { version: number; reason: string; created_at: string; material_status: string }[]
 }
 type Conclusion = {
+  category?: string; recommendations?: string[]
   id: string; version: number; created_at: string; kind: 'hypothesis' | 'confirmed' | 'undetermined'
   verification: string; mechanism: string | null; evidence_ids: string[]; missing: string[]; boundary: string
   phenomenon?: string; causal_chain?: string; alternatives?: string; contradictions?: string
@@ -113,7 +115,7 @@ type Investigation = {
   severity_history: SeverityEvent[]
   severity_suggestions: SeverityEvent[]
   evidence_count: number
-  attempts: { id: string; attempt_number: number; execution_phase: string; cancel_requested_at: string | null; deadline_at: string; timeout_requested_at: string | null; stop_confirmed_at: string | null; service_id: string; starts_at: string; ends_at: string; status: string; execution_mode: 'controlled'; evidence_count: number; evidence: Evidence[]; historical_reference_states: Record<string, { included_evidence_id: string | null; reference_allowed: boolean }>; evidence_notices: string[]; ended_at: string | null; result: string | null; end_reason: string | null; conclusion: Conclusion | null; conclusions: Conclusion[]; queries: QueryRun[]; query_coverage: { complete: boolean; missing_sources: string[]; notice: string } }[]
+  attempts: { agent_run?: { model: string; phase: string; reason: string | null; calls: number; spent_microyuan: number; reserved_microyuan: number }; id: string; attempt_number: number; execution_phase: string; cancel_requested_at: string | null; deadline_at: string; timeout_requested_at: string | null; stop_confirmed_at: string | null; service_id: string; starts_at: string; ends_at: string; status: string; execution_mode: 'controlled'; evidence_count: number; evidence: Evidence[]; historical_reference_states: Record<string, { included_evidence_id: string | null; reference_allowed: boolean }>; evidence_notices: string[]; ended_at: string | null; result: string | null; end_reason: string | null; conclusion: Conclusion | null; conclusions: Conclusion[]; queries: QueryRun[]; query_coverage: { complete: boolean; missing_sources: string[]; notice: string } }[]
   created_at: string
   updated_at: string
   retention_expires_at: string | null
@@ -524,6 +526,7 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
               <p>可控执行适配器：支持受控异步查询及结构化证据；未接真实日志或 Agent，不代表真实来源验收完成。</p>
               <p v-if="attempt.ended_at">结束时间：{{ displayTime(attempt.ended_at) }} · {{ attempt.end_reason === 'user_canceled' ? '用户主动停止，已确认执行终止' : attempt.end_reason === 'necessary_sources_unavailable' ? '必要来源不可用，无法继续' : attempt.end_reason === 'attempt_deadline_exceeded' ? '单轮10分钟总时限已到' : attempt.end_reason === 'service_interrupted' ? '服务中断，已确认旧执行退出并隔离写入' : '正常排查结束' }}</p>
               <p>调查结果：{{ attempt.result || (attempt.status === '已取消' ? '主动停止，未完成排查' : attempt.status === '失败' ? '技术失败，未完成排查' : '尚未结束') }}；已完成不代表已确认根因。</p>
+              <AgentRunStatus v-if="attempt.agent_run" :run="attempt.agent_run" />
               <h4>来源查询与覆盖</h4>
               <p role="status">{{ attempt.query_coverage.notice }}</p>
               <p v-if="!attempt.queries.length">尚未查询所有来源，覆盖不完整。</p>
@@ -552,13 +555,15 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
                   <p v-for="id in change.evidence_ids" :key="id"><button @click="locateEvidence(change.attempt_id, id)">查看核验依据 {{ id }}</button></p>
                 </article>
                 <p v-if="conclusion.mechanism">候选机制：依赖错误传播导致请求失败</p>
+                <p v-if="conclusion.category">分析类型：{{ conclusion.category }}</p>
+                <p v-for="(recommendation, index) in conclusion.recommendations ?? []" :key="index">只读建议：{{ recommendation }}</p>
                 <p v-if="conclusion.phenomenon">故障现象：{{ conclusion.phenomenon }}</p>
                 <p v-if="conclusion.causal_chain">因果机制：{{ conclusion.causal_chain }}</p>
                 <p v-if="conclusion.alternatives">替代解释：{{ conclusion.alternatives }}</p>
                 <p v-if="conclusion.contradictions">关键矛盾：{{ conclusion.contradictions }}</p>
                 <p>现有依据：<span v-if="!conclusion.evidence_ids.length">无已纳入证据，不表示没有故障。</span></p>
                 <p v-for="id in conclusion.evidence_ids" :key="id"><a :href="`#evidence-${attempt.id}-${id}`" @click.prevent="locateEvidence(attempt.id, id)">查看证据 {{ id }}</a></p>
-                <p v-if="conclusion.missing.length">缺失证据：{{ conclusion.missing.map(item => missingLabels[item]).join('、') }}</p>
+                <p v-if="conclusion.missing.length">缺失证据：{{ conclusion.missing.map(item => missingLabels[item] ?? item).join('、') }}</p>
                 <p>{{ conclusion.boundary }}</p>
                 <p>修复建议仅供参考，不执行环境写操作。</p>
               </article>

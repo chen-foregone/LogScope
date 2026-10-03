@@ -60,7 +60,8 @@ def severity_view(connection, investigation_id, severity_version, latest_attempt
     running = latest_attempt is not None and latest_attempt['status'] == '调查中'
     applied = {item.get('suggestion_id') for item in history if item['kind'] == 'confirmation'}
     suggestions = [dict(item, status='applied' if item['id'] in applied else 'pending'
-        if item['base_version'] == severity_version and item['attempt_id'] == latest_id and running else 'stale')
+        if item['base_version'] == severity_version and item['attempt_id'] == latest_id
+        and (running or item.get('requires_confirmation') and latest_attempt['status'] == '已完成') else 'stale')
         for item in history if item['kind'] == 'suggestion']
     return history, suggestions
 
@@ -143,7 +144,7 @@ def severity_router(engine, credential, clock):
                     if suggestion is None:
                         raise HTTPException(404, '建议不存在')
                     if (suggestion['base_version'] != row['severity_version'] or suggestion['attempt_id'] != str(latest)
-                            or not latest_running
+                            or not (latest_running or suggestion.get('requires_confirmation') and latest_row['status'] == '已完成')
                             or any(item.get('suggestion_id') == str(suggestion_id) for item in history)):
                         raise HTTPException(409, '建议已过时或已应用，请刷新后重新评估')
                     basis = Impact.model_validate(suggestion['basis'])
