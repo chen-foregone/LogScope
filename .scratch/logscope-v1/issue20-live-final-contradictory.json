@@ -1,0 +1,96 @@
+{
+  "source": "simulated-http",
+  "model": "real-qwen-plus",
+  "scenario": "contradictory",
+  "status": "\u5df2\u5b8c\u6210",
+  "evidence_count": 1,
+  "evidence": [
+    {
+      "source": "\u6765\u6e90\u4ee3\u53f7-84292a6ee1492c83104d7f339beb185273806aee2e01e7f67169d97f6aca225e",
+      "occurred_at": "2026-11-01T00:15:00Z",
+      "query": {
+        "starts_at": "2026-11-01T00:00:00Z",
+        "ends_at": "2026-11-01T01:00:00Z",
+        "fields": {
+          "email": "\u4ee3\u53f7-5ed03cbcbea07efb0a05c106c662b47950b10ae6323c62715ecaef194dbf4afd"
+        }
+      },
+      "snippet": {
+        "event": "request_failed",
+        "error_code": "ETIMEDOUT",
+        "fields": {
+          "name": "\u4ee3\u53f7-4ccc59bca9a9e8a14f4d5f53128fe11f277aaf3c31b7f2bb203e0d919dba11cc",
+          "phone": "\u4ee3\u53f7-a37c20f7e93cc4b377c3e5531f6cd368be17195cad79e43ced2362600e0f21ed",
+          "email": "\u4ee3\u53f7-5ed03cbcbea07efb0a05c106c662b47950b10ae6323c62715ecaef194dbf4afd",
+          "document": "\u4ee3\u53f7-a1425f48407ff301704e1b5cf0db67d31d63d3e6b151f2cc108d97036c9b3795",
+          "correlation_id": "\u4ee3\u53f7-88b252a30b0b9e9029d67cb6254d1bb44878dc01b4ff5869c960105a8d790508",
+          "password": "[\u5df2\u5c4f\u853d]",
+          "token": "[\u5df2\u5c4f\u853d]",
+          "key": "[\u5df2\u5c4f\u853d]",
+          "session": "[\u5df2\u5c4f\u853d]"
+        },
+        "causal_trace": {
+          "format": "observed-propagation-v1",
+          "dependency_error": "ETIMEDOUT",
+          "propagated_error": "ETIMEDOUT",
+          "request_outcome": "failed_by_dependency",
+          "local_rejection": "excluded_by_trace",
+          "independent_failure": "excluded_by_trace",
+          "contradiction": "unresolved"
+        }
+      },
+      "locator": "\u5b9a\u4f4d\u4ee3\u53f7-0e11a992ee1e30d0ff64166182b7738ea2cb5687b515527a21661e00e26aeda0",
+      "redaction_note": "\u53d7\u63a7\u7ed3\u6784\u5316\u4e8b\u4ef6v1\uff1a\u51ed\u636e\u5c4f\u853d\uff0c\u8eab\u4efd\u4e0e\u5173\u8054\u6807\u8bc6\u4f7f\u7528\u8c03\u67e5\u5185\u4ee3\u53f7\uff0c\u5b9a\u4f4d\u6574\u4f53\u4e0d\u53ef\u9006\u4ee3\u53f7\u5316\uff1b\u4e0d\u63a5\u6536\u81ea\u7531\u6587\u672c\u6216\u672a\u77e5\u5b57\u6bb5\u3002\u4ee3\u53f7\u5b9a\u4f4d\u987b\u7531\u53d7\u63a7\u6765\u6e90\u91cd\u65b0\u6838\u9a8c\uff0c\u4e0d\u80fd\u76f4\u63a5\u6253\u5f00\u539f\u94fe\u63a5\u3002",
+      "source_mode": "simulated",
+      "id": "4f621e5e-b374-4446-8861-7e7a324e8b2d",
+      "identity_status": "reliable",
+      "source_attempt_id": "05216e2a-00a0-4d78-8bad-9ac963c867d4",
+      "source_attempt_number": 1,
+      "source_access": "unknown",
+      "verification": "retained_structured_material",
+      "verification_version": 0,
+      "verification_history": []
+    }
+  ],
+  "run": {
+    "model": "qwen-plus",
+    "phase": "completed",
+    "reason": "normal_completion",
+    "calls": 2,
+    "spent_microyuan": 3154,
+    "reserved_microyuan": 0,
+    "created_at": "2026-11-06T13:26:59.338095Z",
+    "updated_at": "2026-11-06T13:27:09.793908Z"
+  },
+  "conclusion": {
+    "id": "ebd3209a-c44b-443e-93a8-7a2dda62702d",
+    "version": 1,
+    "created_at": "2026-11-06T13:27:09.777728+00:00",
+    "format": "agent-analysis-v1",
+    "kind": "hypothesis",
+    "category": "dependency",
+    "verification": "insufficient",
+    "mechanism": null,
+    "phenomenon": "\u672c\u8f6e\u5b58\u5728\u8bf7\u6c42\u5931\u8d25\u62a5\u544a\u53ca\u672a\u89e3\u51b3\u77db\u76fe",
+    "causal_chain": "\u53d7\u63a7\u8f68\u8ff9\u5b58\u5728\u672a\u89e3\u51b3\u77db\u76fe\uff0c\u5c1a\u4e0d\u80fd\u636e\u6b64\u786e\u5b9a\u9519\u8bef\u4f20\u64ad\u8def\u5f84\u6216\u6839\u56e0\u3002",
+    "alternatives": "The timeout could originate from network infrastructure (e.g., load balancer, proxy), DNS resolution, TLS handshake, or an upstream service that is unreachable or overloaded. It is also possible the timeout threshold is misconfigured relative to actual dependency latency.",
+    "contradictions": "\u672c\u8f6e\u53d7\u63a7\u8f68\u8ff9\u5b58\u5728\u672a\u89e3\u51b3\u77db\u76fe\uff1b\u4e0d\u80fd\u786e\u8ba4\u4f20\u64ad\u673a\u5236\u6216\u6392\u9664\u5176\u4ed6\u539f\u56e0\u3002",
+    "evidence_ids": [
+      "4f621e5e-b374-4446-8861-7e7a324e8b2d"
+    ],
+    "missing": [
+      "\u9700\u8981\u89e3\u51b3\u53d7\u63a7\u8f68\u8ff9\u4e2d\u7684\u5173\u952e\u77db\u76fe",
+      "Dependency endpoint identity (e.g., hostname, service name)",
+      "Network-layer telemetry (e.g., DNS, TCP connect, TLS handshake logs)",
+      "Dependency health metrics (e.g., uptime, latency percentiles, error rates)",
+      "Orders service timeout configuration values"
+    ],
+    "recommendations": [
+      "Identify the concrete dependency endpoint involved in the failing requests",
+      "Check network connectivity and TLS readiness to that endpoint",
+      "Review timeout configuration for outbound calls in the orders service",
+      "Correlate with dependency health metrics during the incident window"
+    ],
+    "boundary": "\u771f\u5b9e\u6a21\u578b\u5206\u6790\uff1b\u6a21\u62df\u65e5\u5fd7\u6765\u6e90\u3002\u6a21\u578b\u5224\u65ad\u4e0d\u662f\u56e0\u679c\u8bc1\u660e\uff0c\u5efa\u8bae\u4e0d\u4f1a\u81ea\u52a8\u6267\u884c\u3002"
+  }
+}

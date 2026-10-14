@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="10" time="58.957" timestamp="2026-11-06T21:15:44.755970+08:00" hostname="foregone"><testcase classname="tests.test_agent_ui" name="test_agent_run_and_failure_survive_browser_reload[agent]" time="21.318"><failure message="AssertionError: Locator expected to contain text '正常结束'&#10;Actual value: 只读 Agent · qwen-plus阶段：待领取 · 模型调用 0 次估算已结算 ¥0.000000 · 待确认预留 ¥0.000000模拟日志来源，非真实来源验收。费用以百炼账单为准；建议不会自动执行。 &#10;Call log:&#10;  - Expect &quot;to_contain_text&quot; get_by_role(&quot;region&quot;, name=&quot;Agent运行状态&quot;) with timeout 5000ms&#10;  - waiting for get_by_role(&quot;region&quot;, name=&quot;Agent运行状态&quot;)&#10;    14 × locator resolved to &lt;section class=&quot;evidence-card&quot; aria-label=&quot;Agent运行状态&quot;&gt;…&lt;/section&gt;&#10;[+8 more lines; full report in element text]">tests\test_agent_ui.py:23: in test_agent_run_and_failure_survive_browser_reload
+    expect(run).to_contain_text(expected)
+E   AssertionError: Locator expected to contain text '正常结束'
+E   Actual value: 只读 Agent · qwen-plus阶段：待领取 · 模型调用 0 次估算已结算 ¥0.000000 · 待确认预留 ¥0.000000模拟日志来源，非真实来源验收。费用以百炼账单为准；建议不会自动执行。 
+E   Call log:
+E     - Expect "to_contain_text" get_by_role("region", name="Agent运行状态") with timeout 5000ms
+E     - waiting for get_by_role("region", name="Agent运行状态")
+E       14 × locator resolved to &lt;section class="evidence-card" aria-label="Agent运行状态"&gt;…&lt;/section&gt;
+E          - unexpected value "只读 Agent · qwen-plus阶段：待领取 · 模型调用 0 次估算已结算 ¥0.000000 · 待确认预留 ¥0.000000模拟日志来源，非真实来源验收。费用以百炼账单为准；建议不会自动执行。"
+E   
+E   Aria snapshot:
+E   - region "Agent运行状态":
+E     - heading "只读 Agent · qwen-plus" [level=4]
+E     - paragraph: 阶段：待领取 · 模型调用 0 次
+E     - paragraph: 估算已结算 ¥0.000000 · 待确认预留 ¥0.000000
+E     - note: 模拟日志来源，非真实来源验收。费用以百炼账单为准；建议不会自动执行。</failure></testcase><testcase classname="tests.test_agent_ui" name="test_agent_run_and_failure_survive_browser_reload[agent_error]" time="14.983"><failure message="AssertionError: Locator expected to contain text '模型调用或产物校验失败'&#10;Actual value: 只读 Agent · qwen-plus阶段：待领取 · 模型调用 0 次估算已结算 ¥0.000000 · 待确认预留 ¥0.000000模拟日志来源，非真实来源验收。费用以百炼账单为准；建议不会自动执行。 &#10;Call log:&#10;  - Expect &quot;to_contain_text&quot; get_by_role(&quot;region&quot;, name=&quot;Agent运行状态&quot;) with timeout 5000ms&#10;  - waiting for get_by_role(&quot;region&quot;, name=&quot;Agent运行状态&quot;)&#10;    14 × locator resolved to &lt;section class=&quot;evidence-card&quot; aria-label=&quot;Agent运行状态&quot;&gt;…&lt;/section&gt;&#10;[+8 more lines; full report in element text]">tests\test_agent_ui.py:23: in test_agent_run_and_failure_survive_browser_reload
+    expect(run).to_contain_text(expected)
+E   AssertionError: Locator expected to contain text '模型调用或产物校验失败'
+E   Actual value: 只读 Agent · qwen-plus阶段：待领取 · 模型调用 0 次估算已结算 ¥0.000000 · 待确认预留 ¥0.000000模拟日志来源，非真实来源验收。费用以百炼账单为准；建议不会自动执行。 
+E   Call log:
+E     - Expect "to_contain_text" get_by_role("region", name="Agent运行状态") with timeout 5000ms
+E     - waiting for get_by_role("region", name="Agent运行状态")
+E       14 × locator resolved to &lt;section class="evidence-card" aria-label="Agent运行状态"&gt;…&lt;/section&gt;
+E          - unexpected value "只读 Agent · qwen-plus阶段：待领取 · 模型调用 0 次估算已结算 ¥0.000000 · 待确认预留 ¥0.000000模拟日志来源，非真实来源验收。费用以百炼账单为准；建议不会自动执行。"
+E   
+E   Aria snapshot:
+E   - region "Agent运行状态":
+E     - heading "只读 Agent · qwen-plus" [level=4]
+E     - paragraph: 阶段：待领取 · 模型调用 0 次
+E     - paragraph: 估算已结算 ¥0.000000 · 待确认预留 ¥0.000000
+E     - note: 模拟日志来源，非真实来源验收。费用以百炼账单为准；建议不会自动执行。</failure></testcase><testcase classname="backend.tests.test_release" name="test_upgrade_and_restart_preserve_full_archived_history" time="4.701" /><testcase classname="backend.tests.test_release" name="test_agent_restart_and_cleanup_keep_global_budget" time="2.411" /><testcase classname="backend.tests.test_release" name="test_agent_save_crossing_deadline_discards_all_products" time="1.924" /><testcase classname="backend.tests.test_release" name="test_trace_does_not_confirm_unsupported_model_explanation" time="2.072" /><testcase classname="backend.tests.test_release" name="test_active_agent_process_exit_is_required_before_restart_releases_slot" time="4.386" /><testcase classname="backend.tests.test_release" name="test_agent_gets_private_report_hints_and_persisted_scope[\u8bf7\u6c42\u8d85\u65f6-expected0]" time="1.688" /><testcase classname="backend.tests.test_release" name="test_agent_gets_private_report_hints_and_persisted_scope[\u6743\u9650\u62d2\u7edd-expected1]" time="1.743" /><testcase classname="backend.tests.test_release" name="test_agent_gets_private_report_hints_and_persisted_scope[unmatched report-expected2]" time="2.031" /></testsuite></testsuites>

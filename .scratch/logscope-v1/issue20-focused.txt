@@ -1,0 +1,50 @@
+FF........                                                               [100%]
+================================== FAILURES ===================================
+__________ test_agent_run_and_failure_survive_browser_reload[agent] ___________
+tests\test_agent_ui.py:23: in test_agent_run_and_failure_survive_browser_reload
+    expect(run).to_contain_text(expected)
+E   AssertionError: Locator expected to contain text '��������'
+E   Actual value: \u53ea\u8bfb Agent \xb7 qwen-plus\u9636\u6bb5\uff1a\u5f85\u9886\u53d6 \xb7 \u6a21\u578b\u8c03\u7528 0 \u6b21\u4f30\u7b97\u5df2\u7ed3\u7b97 \xa50.000000 \xb7 \u5f85\u786e\u8ba4\u9884\u7559 \xa50.000000\u6a21\u62df\u65e5\u5fd7\u6765\u6e90\uff0c\u975e\u771f\u5b9e\u6765\u6e90\u9a8c\u6536\u3002\u8d39\u7528\u4ee5\u767e\u70bc\u8d26\u5355\u4e3a\u51c6\uff1b\u5efa\u8bae\u4e0d\u4f1a\u81ea\u52a8\u6267\u884c\u3002 
+E   Call log:
+E     - Expect "to_contain_text" get_by_role("region", name="Agent����״̬") with timeout 5000ms
+E     - waiting for get_by_role("region", name="Agent����״̬")
+E       14 �� locator resolved to <section class="evidence-card" aria-label="Agent����״̬">��</section>
+E          - unexpected value "\u53ea\u8bfb Agent \xb7 qwen-plus\u9636\u6bb5\uff1a\u5f85\u9886\u53d6 \xb7 \u6a21\u578b\u8c03\u7528 0 \u6b21\u4f30\u7b97\u5df2\u7ed3\u7b97 \xa50.000000 \xb7 \u5f85\u786e\u8ba4\u9884\u7559 \xa50.000000\u6a21\u62df\u65e5\u5fd7\u6765\u6e90\uff0c\u975e\u771f\u5b9e\u6765\u6e90\u9a8c\u6536\u3002\u8d39\u7528\u4ee5\u767e\u70bc\u8d26\u5355\u4e3a\u51c6\uff1b\u5efa\u8bae\u4e0d\u4f1a\u81ea\u52a8\u6267\u884c\u3002"
+E   
+E   Aria snapshot:
+E   - region "Agent����״̬":
+E     - heading "ֻ�� Agent �� qwen-plus" [level=4]
+E     - paragraph: �׶Σ�����ȡ �� ģ�͵��� 0 ��
+E     - paragraph: \u4f30\u7b97\u5df2\u7ed3\u7b97 \xa50.000000 \xb7 \u5f85\u786e\u8ba4\u9884\u7559 \xa50.000000
+E     - note: ģ����־��Դ������ʵ��Դ���ա������԰����˵�Ϊ׼�����鲻���Զ�ִ�С�
+---------------------------- Captured stdout setup ----------------------------
+UI����schema: issue03_ui_3abe4ae146d24180b6ed05dd6a2ad347
+_______ test_agent_run_and_failure_survive_browser_reload[agent_error] ________
+tests\test_agent_ui.py:23: in test_agent_run_and_failure_survive_browser_reload
+    expect(run).to_contain_text(expected)
+E   AssertionError: Locator expected to contain text 'ģ�͵��û����У��ʧ��'
+E   Actual value: \u53ea\u8bfb Agent \xb7 qwen-plus\u9636\u6bb5\uff1a\u5f85\u9886\u53d6 \xb7 \u6a21\u578b\u8c03\u7528 0 \u6b21\u4f30\u7b97\u5df2\u7ed3\u7b97 \xa50.000000 \xb7 \u5f85\u786e\u8ba4\u9884\u7559 \xa50.000000\u6a21\u62df\u65e5\u5fd7\u6765\u6e90\uff0c\u975e\u771f\u5b9e\u6765\u6e90\u9a8c\u6536\u3002\u8d39\u7528\u4ee5\u767e\u70bc\u8d26\u5355\u4e3a\u51c6\uff1b\u5efa\u8bae\u4e0d\u4f1a\u81ea\u52a8\u6267\u884c\u3002 
+E   Call log:
+E     - Expect "to_contain_text" get_by_role("region", name="Agent����״̬") with timeout 5000ms
+E     - waiting for get_by_role("region", name="Agent����״̬")
+E       14 �� locator resolved to <section class="evidence-card" aria-label="Agent����״̬">��</section>
+E          - unexpected value "\u53ea\u8bfb Agent \xb7 qwen-plus\u9636\u6bb5\uff1a\u5f85\u9886\u53d6 \xb7 \u6a21\u578b\u8c03\u7528 0 \u6b21\u4f30\u7b97\u5df2\u7ed3\u7b97 \xa50.000000 \xb7 \u5f85\u786e\u8ba4\u9884\u7559 \xa50.000000\u6a21\u62df\u65e5\u5fd7\u6765\u6e90\uff0c\u975e\u771f\u5b9e\u6765\u6e90\u9a8c\u6536\u3002\u8d39\u7528\u4ee5\u767e\u70bc\u8d26\u5355\u4e3a\u51c6\uff1b\u5efa\u8bae\u4e0d\u4f1a\u81ea\u52a8\u6267\u884c\u3002"
+E   
+E   Aria snapshot:
+E   - region "Agent����״̬":
+E     - heading "ֻ�� Agent �� qwen-plus" [level=4]
+E     - paragraph: �׶Σ�����ȡ �� ģ�͵��� 0 ��
+E     - paragraph: \u4f30\u7b97\u5df2\u7ed3\u7b97 \xa50.000000 \xb7 \u5f85\u786e\u8ba4\u9884\u7559 \xa50.000000
+E     - note: ģ����־��Դ������ʵ��Դ���ա������԰����˵�Ϊ׼�����鲻���Զ�ִ�С�
+---------------------------- Captured stdout setup ----------------------------
+UI����schema: issue03_ui_b05a69a2384043a8adc21224ce5e3485
+============================== warnings summary ===============================
+backend/tests/test_release.py::test_agent_restart_and_cleanup_keep_global_budget
+  C:\Users\c1342\WorkBuddy\log-scope\.venv\Lib\site-packages\langgraph\cache\base\__init__.py:8: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED tests/test_agent_ui.py::test_agent_run_and_failure_survive_browser_reload[agent]
+FAILED tests/test_agent_ui.py::test_agent_run_and_failure_survive_browser_reload[agent_error]
+2 failed, 8 passed, 1 warning in 59.00s

@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="2" skipped="0" tests="2" time="26.266" timestamp="2026-11-06T21:18:12.190703+08:00" hostname="foregone"><testcase classname="tests.test_agent_ui" name="test_agent_run_and_failure_survive_browser_reload[agent]" time="15.345"><failure message="AssertionError: assert False&#10; +  where False = evaluate('document.documentElement.scrollWidth &lt;= window.innerWidth')&#10; +    where evaluate = &lt;Page url='http://127.0.0.1:5274/#/investigations/9362731f-d99d-4949-ad15-b0fa82c65b3f'&gt;.evaluate">tests\test_agent_ui.py:41: in test_agent_run_and_failure_survive_browser_reload
+    assert page.evaluate('document.documentElement.scrollWidth &lt;= window.innerWidth')
+E   AssertionError: assert False
+E    +  where False = evaluate('document.documentElement.scrollWidth &lt;= window.innerWidth')
+E    +    where evaluate = &lt;Page url='http://127.0.0.1:5274/#/investigations/9362731f-d99d-4949-ad15-b0fa82c65b3f'&gt;.evaluate</failure></testcase><testcase classname="tests.test_agent_ui" name="test_agent_run_and_failure_survive_browser_reload[agent_error]" time="9.599"><failure message="AssertionError: assert False&#10; +  where False = evaluate('document.documentElement.scrollWidth &lt;= window.innerWidth')&#10; +    where evaluate = &lt;Page url='http://127.0.0.1:5274/#/investigations/e0e85bfb-894f-4b6d-91e5-ab3280234135'&gt;.evaluate">tests\test_agent_ui.py:41: in test_agent_run_and_failure_survive_browser_reload
+    assert page.evaluate('document.documentElement.scrollWidth &lt;= window.innerWidth')
+E   AssertionError: assert False
+E    +  where False = evaluate('document.documentElement.scrollWidth &lt;= window.innerWidth')
+E    +    where evaluate = &lt;Page url='http://127.0.0.1:5274/#/investigations/e0e85bfb-894f-4b6d-91e5-ab3280234135'&gt;.evaluate</failure></testcase></testsuite></testsuites>

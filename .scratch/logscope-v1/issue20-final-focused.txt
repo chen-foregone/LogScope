@@ -1,0 +1,13 @@
+........................................................................ [ 86%]
+...........                                                              [100%]
+============================== warnings summary ===============================
+backend/tests/test_release.py::test_agent_restart_and_cleanup_keep_global_budget
+  C:\Users\c1342\WorkBuddy\log-scope\.venv\Lib\site-packages\langgraph\cache\base\__init__.py:8: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+backend/tests/test_conclusions.py::test_concurrent_finish_idempotency_and_version_guard
+  C:\Users\c1342\WorkBuddy\log-scope\.venv\Lib\site-packages\pydantic\_internal\_generate_schema.py:2346: UnsupportedFieldAttributeWarning: The 'alias' attribute with value 'authorization' was provided to the `Field()` function, which has no effect in the context it was used. 'alias' is field-specific metadata, and can only be attached to a model field using `Annotated` metadata or by assignment. This may have happened because an `Annotated` type alias using the `type` statement was used, or if the `Field()` function was attached to a single member of a union type.
+    warnings.warn(
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+83 passed, 2 warnings in 194.17s (0:03:14)

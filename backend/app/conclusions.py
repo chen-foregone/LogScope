@@ -65,9 +65,11 @@ def conclusion_router(engine, credential, clock):
 
 def save_agent_analysis(engine, clock, investigation_id, attempt_id, execution_id, analysis):
     from app.agent_runner import locked_attempt
-    from app.verification import evidence_usable, trace_supports, restore_linked_conclusion
+    from app.verification import evidence_usable, restore_linked_conclusion
     with engine.begin() as connection:
         row = locked_attempt(connection, {'attempt_id': attempt_id, 'execution_id': execution_id}, clock)
+        from app.deadlines import finalize_deadline
+        pending = connection.begin_nested()
         saved = connection.execute(included_evidence(attempt_id)).mappings().all()
         usable = {str(item['id']): item for item in saved if evidence_usable(connection, item)}
         ids = [str(value) for value in analysis.evidence_ids]
@@ -76,24 +78,26 @@ def save_agent_analysis(engine, clock, investigation_id, attempt_id, execution_i
         from app.queries import queries
         if connection.execute(select(queries.c.id).where(queries.c.attempt_id == attempt_id, queries.c.active.is_(True))).first():
             raise HTTPException(409, '查询尚未退出')
-        # General model prose is never sufficient proof. Only existing controlled trace rules confirm.
-        supported = (analysis.category == 'dependency' and analysis.kind == 'confirmed' and ids
-            and any(trace_supports(usable[value]['material']) for value in ids)
-            and not row['evidence_unavailable']
-            and not any((item['material'].get('snippet') or {}).get('causal_trace')
-                        and not trace_supports(item['material']) for item in saved))
-        kind = 'confirmed' if supported else 'hypothesis' if ids else 'undetermined'
+        # A trace can prove propagation, but cannot validate arbitrary model prose.
+        # Confirmation remains available through the separate controlled-analysis protocol.
+        kind = 'hypothesis' if ids and analysis.kind != 'undetermined' else 'undetermined'
         history = conclusion_views(connection, attempt_id)
         now = clock()
         result = {'id': str(uuid4()), 'version': len(history) + 1, 'created_at': now.isoformat(),
             'format': 'agent-analysis-v1', 'kind': kind, 'category': analysis.category,
-            'verification': 'supported_controlled_trace' if supported else 'insufficient',
-            'mechanism': 'dependency_error_propagation' if supported else None,
+            'verification': 'insufficient', 'mechanism': None,
             'phenomenon': analysis.phenomenon, 'causal_chain': analysis.explanation,
             'alternatives': analysis.alternatives, 'contradictions': analysis.contradictions,
             'evidence_ids': ids, 'missing': analysis.missing_evidence,
             'recommendations': analysis.recommendations,
             'boundary': '真实模型分析；模拟日志来源。模型判断不是因果证明，建议不会自动执行。'}
+        if any(((item['material'].get('snippet') or {}).get('causal_trace') or {}).get(
+                'contradiction') == 'unresolved' for item in saved):
+            # Structured source contradictions override a model's unsupported exclusion.
+            result.update(phenomenon='本轮存在请求失败报告及未解决矛盾',
+                causal_chain='受控轨迹存在未解决矛盾，尚不能据此确定错误传播路径或根因。',
+                contradictions='本轮受控轨迹存在未解决矛盾；不能确认传播机制或排除其他原因。',
+                missing=['需要解决受控轨迹中的关键矛盾', *analysis.missing_evidence][:8])
         connection.execute(insert(conclusions).values(id=UUID(result['id']), attempt_id=attempt_id,
             execution_id=execution_id, version=result['version'], request_key=uuid4(),
             request_body=json.dumps(analysis.model_dump(mode='json'), sort_keys=True), created_at=now, material=result))
@@ -112,12 +116,13 @@ def save_agent_analysis(engine, clock, investigation_id, attempt_id, execution_i
                 request_key=uuid4(), request_body=json.dumps(suggestion, sort_keys=True),
                 material=suggestion, sequence=suggestion['sequence']))
         connection.execute(update(attempts).where(attempts.c.id == attempt_id).values(status='已完成',
-            result='已确认根因' if supported else '未确定根因', ended_at=now, end_reason='normal_completion'))
+            result='未确定根因', ended_at=now, end_reason='normal_completion'))
         connection.execute(update(executions).where(executions.c.id == execution_id).values(valid=False))
         from app.agent_storage import runs
         connection.execute(update(runs).where(runs.c.execution_id == execution_id).values(
             phase='completed', reason='normal_completion', active=False, updated_at=now))
         connection.execute(update(investigations).where(investigations.c.id == investigation_id).values(updated_at=now))
+        finalize_deadline(connection, row, clock, pending)
         return result
 
 

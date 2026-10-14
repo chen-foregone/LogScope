@@ -1,0 +1,22 @@
+FF                                                                       [100%]
+================================== FAILURES ===================================
+__________ test_agent_run_and_failure_survive_browser_reload[agent] ___________
+tests\test_agent_ui.py:41: in test_agent_run_and_failure_survive_browser_reload
+    assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+E   AssertionError: assert False
+E    +  where False = evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+E    +    where evaluate = <Page url='http://127.0.0.1:5274/#/investigations/9362731f-d99d-4949-ad15-b0fa82c65b3f'>.evaluate
+---------------------------- Captured stdout setup ----------------------------
+UI����schema: issue03_ui_cc4bad1643a44ba6b63e3576a9ab5cbd
+_______ test_agent_run_and_failure_survive_browser_reload[agent_error] ________
+tests\test_agent_ui.py:41: in test_agent_run_and_failure_survive_browser_reload
+    assert page.evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+E   AssertionError: assert False
+E    +  where False = evaluate('document.documentElement.scrollWidth <= window.innerWidth')
+E    +    where evaluate = <Page url='http://127.0.0.1:5274/#/investigations/e0e85bfb-894f-4b6d-91e5-ab3280234135'>.evaluate
+---------------------------- Captured stdout setup ----------------------------
+UI����schema: issue03_ui_f467e22eaca04b0aa58f63829b069153
+=========================== short test summary info ===========================
+FAILED tests/test_agent_ui.py::test_agent_run_and_failure_survive_browser_reload[agent]
+FAILED tests/test_agent_ui.py::test_agent_run_and_failure_survive_browser_reload[agent_error]
+2 failed in 26.37s

@@ -1,6 +1,7 @@
 """Bounded single-agent graph. Business state, not checkpoints, authorizes execution."""
 import asyncio
 import json
+import re
 from typing import TypedDict
 from uuid import uuid4
 
@@ -66,6 +67,24 @@ class GraphState(TypedDict):
     messages: list
     steps: int
     done: bool
+
+
+def case_context(connection, row):
+    report = connection.execute(select(investigations.c.title, investigations.c.description).where(
+        investigations.c.id == row['investigation_id'])).one()
+    text = report.title + '\n' + report.description
+    # Emit canonical hints only: arbitrary user text has no reliable redaction contract.
+    signals = {'timeout': r'超时|\btimeout\b|\bETIMEDOUT\b',
+               'request_failure': r'请求失败|\brequest failed\b',
+               'latency': r'延迟|\blatency\b',
+               'permission_denied': r'权限拒绝|权限不足|\bpermission denied\b',
+               'resource_exhaustion': r'资源耗尽|内存不足|\bout of memory\b',
+               'configuration': r'配置|\bconfiguration\b'}
+    return {'scope': {'service_id': row['service_id'], 'starts_at': row['starts_at'].isoformat(),
+                      'ends_at': row['ends_at'].isoformat()},
+            'reported_symptom_signals': [key for key, pattern in signals.items() if re.search(pattern, text, re.I)],
+            'context_boundary': 'Unverified report topic hints, possibly negated; not observations or causes. '
+                                'Detailed free-text problem context is withheld for privacy.'}
 
 
 async def run_agent(engine, run, config, model, sources, schedule, clock):
@@ -151,12 +170,13 @@ async def run_agent(engine, run, config, model, sources, schedule, clock):
     graph.add_conditional_edges('analyze', lambda state: END if state['done'] else 'analyze')
     try:
         with engine.begin() as connection:
-            locked_attempt(connection, run, clock)
+            row = locked_attempt(connection, run, clock)
             materials = evidence_context(connection, run['attempt_id'])
+            context = case_context(connection, row)
         from langsmith import tracing_context
         with tracing_context(enabled=False):
             await graph.compile().ainvoke({'messages': [SystemMessage(content=SYSTEM), HumanMessage(
-                content=json.dumps({'evidence': materials, 'source_mode': 'simulated',
+                content=json.dumps({**context, 'evidence': materials, 'source_mode': 'simulated',
                                     'task': 'Investigate the fixed scope; collect evidence if needed.'}))],
                 'steps': 0, 'done': False}, config={'recursion_limit': config.max_calls + 2, 'callbacks': []})
     except BudgetUnavailable:

@@ -89,6 +89,26 @@ class DeadlineSource(CancelSource):
         await super().query(**scope)
 uvicorn.run(create_app(clock=clock, query_sources={'ui-limited': Limited(), 'ui-healthy': Healthy(), 'ui-cancel': CancelSource(), 'ui-deadline': DeadlineSource()}), host='127.0.0.1', port=UI_API_PORT, access_log=False)
 '''
+        if legacy_mode in ('agent', 'agent_error'):
+            model_setup = '''
+import json
+from langchain_core.messages import AIMessage
+from app.core.config import AgentSettings
+class AgentModel:
+    async def respond(self, messages):
+        return AIMessage(content=json.dumps({'kind': 'undetermined', 'category': 'unknown',
+            'phenomenon': 'Evidence is insufficient', 'explanation': 'No cause established',
+            'evidence_ids': [], 'alternatives': 'Further evidence required',
+            'contradictions': 'Not evaluated', 'missing_evidence': ['Diagnostic evidence'],
+            'recommendations': []}), usage_metadata={'input_tokens': 100, 'output_tokens': 100, 'total_tokens': 200})
+settings = AgentSettings(_env_file=None, enabled=True, api_key='synthetic-test-only',
+    region_confirmed=True, input_microyuan_per_million_tokens=1000000,
+    output_microyuan_per_million_tokens=1000000, price_version='test-only')
+'''
+            if legacy_mode == 'agent_error':
+                model_setup = model_setup.replace('        return AIMessage(', "        raise ValueError('synthetic-model-secret')\n        return AIMessage(")
+            startup = model_setup + startup.replace('create_app(clock=clock,',
+                'create_app(clock=clock, agent_settings=settings, agent_model=AgentModel(),')
         startup = startup.replace('port=UI_API_PORT', f'port={api_port}')
         processes.append(subprocess.Popen([sys.executable, '-c', startup],
                                          cwd=ROOT, env=env, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL))

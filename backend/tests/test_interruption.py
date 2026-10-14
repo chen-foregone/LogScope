@@ -13,7 +13,7 @@ from datetime import datetime, timedelta
 
 
 @contextmanager
-def live_api(database_url, credential, *, query=False, rate_limited=False, coordinate=True):
+def live_api(database_url, credential, *, query=False, rate_limited=False, coordinate=True, agent=False):
     with socket.socket() as listener:
         listener.bind(('127.0.0.1', 0))
         port = listener.getsockname()[1]
@@ -29,6 +29,16 @@ class Source:
             await asyncio.Future()
 uvicorn.run(create_app(query_sources={'controlled-orders': Source()}), host='127.0.0.1', port=PORT, access_log=False)
 '''.replace('PORT', str(port))
+    if agent:
+        startup = startup.replace('class Source:', '''from app.core.config import AgentSettings
+class Model:
+    async def respond(self, messages):
+        await asyncio.Future()
+settings = AgentSettings(_env_file=None, enabled=True, api_key='synthetic-test-only',
+    region_confirmed=True, input_microyuan_per_million_tokens=1000000,
+    output_microyuan_per_million_tokens=1000000, price_version='test-only')
+class Source:''').replace("query_sources={'controlled-orders': Source()}",
+                         'agent_settings=settings, agent_model=Model()')
     if rate_limited:
         startup = startup.replace('class Source:', 'from app.queries import SourceFailure\nclass Source:').replace(
             '        try:\n            await asyncio.Future()\n        except asyncio.CancelledError:\n            await asyncio.Future()',
@@ -37,7 +47,7 @@ uvicorn.run(create_app(query_sources={'controlled-orders': Source()}), host='127
         startup = startup.replace('class Source:', 'class NoTicks:\n    async def wait(self):\n        await asyncio.Future()\nclass Source:').replace(
             "query_sources={'controlled-orders': Source()}",
             "query_sources={'controlled-orders': Source()}, deadline_schedule=NoTicks()")
-    command = ([sys.executable, '-c', startup] if query or rate_limited or not coordinate else
+    command = ([sys.executable, '-c', startup] if query or rate_limited or not coordinate or agent else
                [sys.executable, '-m', 'uvicorn', 'app.main:app', '--host', '127.0.0.1', '--port', str(port), '--no-access-log'])
     process = subprocess.Popen(command,
         env={**os.environ, 'DATABASE_URL': database_url, 'EXECUTOR_CREDENTIAL': credential,

@@ -523,8 +523,8 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
               <p v-if="attempt.stop_confirmed_at && attempt.cancel_requested_at">用户主动停止，已确认执行终止；停止前保存的材料仍保留。</p>
               <p v-if="attempt.stop_confirmed_at && attempt.timeout_requested_at">总时限退出已确认，已保存材料仍保留。</p>
               <p>固定日志范围：{{ displayTime(attempt.starts_at) }} — {{ displayTime(attempt.ends_at) }}</p>
-              <p>可控执行适配器：支持受控异步查询及结构化证据；未接真实日志或 Agent，不代表真实来源验收完成。</p>
-              <p v-if="attempt.ended_at">结束时间：{{ displayTime(attempt.ended_at) }} · {{ attempt.end_reason === 'user_canceled' ? '用户主动停止，已确认执行终止' : attempt.end_reason === 'necessary_sources_unavailable' ? '必要来源不可用，无法继续' : attempt.end_reason === 'attempt_deadline_exceeded' ? '单轮10分钟总时限已到' : attempt.end_reason === 'service_interrupted' ? '服务中断，已确认旧执行退出并隔离写入' : '正常排查结束' }}</p>
+              <p v-if="!attempt.agent_run">可控执行适配器：支持受控异步查询及结构化证据；未接真实日志或 Agent，不代表真实来源验收完成。</p>
+              <p v-if="attempt.ended_at">结束时间：{{ displayTime(attempt.ended_at) }} · {{ attempt.end_reason === 'user_canceled' ? '用户主动停止，已确认执行终止' : attempt.end_reason === 'necessary_sources_unavailable' ? '必要来源不可用，无法继续' : attempt.end_reason === 'attempt_deadline_exceeded' ? '单轮10分钟总时限已到' : attempt.end_reason === 'service_interrupted' ? '服务中断，已确认旧执行退出并隔离写入' : attempt.end_reason === 'normal_completion' ? '正常排查结束' : '执行结束，请核查退出原因' }}</p>
               <p>调查结果：{{ attempt.result || (attempt.status === '已取消' ? '主动停止，未完成排查' : attempt.status === '失败' ? '技术失败，未完成排查' : '尚未结束') }}；已完成不代表已确认根因。</p>
               <AgentRunStatus v-if="attempt.agent_run" :run="attempt.agent_run" />
               <h4>来源查询与覆盖</h4>
