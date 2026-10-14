@@ -8,6 +8,8 @@
 
 ## Decisions-so-far
 
+- 2026-11-06：北京官方地址真实工具调用成功；真实百炼＋模拟 HTTP 来源＋隔离 PostgreSQL 两轮调查成功，见 [实际联调与语义复核](live-validation.md)。语义复核仍有无依据推断，不关闭最终质量验收。
+
 - 用户批准单 Agent、LangChain 接入、LangGraph 编排、qwen-plus、Windows 本机及更多故障类型。
 - checkpoint 不自动恢复旧执行；本次联调累计预算按 10 元执行，真实费用以供应商账单为准。
 - 用户批准 HTTP API + PostgreSQL + UI 测试边界以及以下依赖图：

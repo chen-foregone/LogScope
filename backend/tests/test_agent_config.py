@@ -50,3 +50,13 @@ def test_environment_configuration_redacts_credentials(monkeypatch):
 def test_unapproved_access_and_invalid_budget_are_rejected(changes):
     with pytest.raises(ValidationError):
         AgentSettings(_env_file=None, **changes)
+
+
+@pytest.mark.parametrize('base_url', [
+    'http://llm-stkkpadoe3fv102.aliyuncs.com/compatible-mode/v1',
+    'https://llm-stkkpadoe3fv102.aliyuncs.com/compatible-mode/v1?secret=1',
+    'https://evil-llm-stkkpadoe3fv102.example.com/compatible-mode/v1',
+])
+def test_workspace_endpoint_requires_secure_approved_host(base_url):
+    with pytest.raises(ValidationError):
+        AgentSettings(_env_file=None, base_url=base_url)

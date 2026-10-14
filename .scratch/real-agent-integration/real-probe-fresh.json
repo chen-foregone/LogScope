@@ -1,0 +1,19 @@
+{
+  "case": "synthetic-protocol-probe",
+  "credential_source": "fresh-machine-environment",
+  "model": "qwen-plus",
+  "reservation_microyuan": 100000,
+  "success": true,
+  "tools": [
+    "query_logs"
+  ],
+  "usage": {
+    "input_tokens": 165,
+    "output_tokens": 15,
+    "total_tokens": 180,
+    "input_token_details": {
+      "cache_read": 0
+    },
+    "output_token_details": {}
+  }
+}

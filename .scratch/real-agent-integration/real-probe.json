@@ -1,0 +1,10 @@
+{
+  "case": "synthetic-protocol-probe",
+  "model": "qwen-plus",
+  "max_output_tokens": 128,
+  "reservation_microyuan": 100000,
+  "source": "synthetic-only",
+  "success": false,
+  "error_type": "AuthenticationError",
+  "http_status": 401
+}
