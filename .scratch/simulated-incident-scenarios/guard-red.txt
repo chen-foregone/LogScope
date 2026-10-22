@@ -1,0 +1,31 @@
+..FFF                                                                    [100%]
+================================== FAILURES ===================================
+_ test_redis_observations_reach_agent_without_answer_leak[redis-contradiction-unresolved] _
+backend\tests\test_incident_scenarios.py:101: in test_redis_observations_reach_agent_without_answer_leak
+    assert 'Restart' not in str(attempt['conclusion']['missing'])
+E   assert 'Restart' not in "['��Ҫ����ܿع켣��...oot cause.']"
+E
+E     'Restart' is contained here:
+E       ['��Ҫ����ܿع켣�еĹؼ�ì��', 'Restart Redis to prove the root cause.']
+E     ?                     +++++++
+______ test_v2_grounding_cannot_be_bypassed_by_evidence_selection[empty] ______
+backend\tests\test_incident_scenarios.py:276: in test_v2_grounding_cannot_be_bypassed_by_evidence_selection
+    assert conclusion['grounding'] == 'structured-observations-v1'
+           ^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'grounding'
+___ test_v2_grounding_cannot_be_bypassed_by_evidence_selection[legacy-only] ___
+backend\tests\test_incident_scenarios.py:276: in test_v2_grounding_cannot_be_bypassed_by_evidence_selection
+    assert conclusion['grounding'] == 'structured-observations-v1'
+           ^^^^^^^^^^^^^^^^^^^^^^^
+E   KeyError: 'grounding'
+============================== warnings summary ===============================
+backend/tests/test_incident_scenarios.py::test_redis_observations_reach_agent_without_answer_leak[redis-timeout-None]
+  C:\Users\c1342\WorkBuddy\log-scope\.venv\Lib\site-packages\langgraph\cache\base\__init__.py:8: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED backend/tests/test_incident_scenarios.py::test_redis_observations_reach_agent_without_answer_leak[redis-contradiction-unresolved]
+FAILED backend/tests/test_incident_scenarios.py::test_v2_grounding_cannot_be_bypassed_by_evidence_selection[empty]
+FAILED backend/tests/test_incident_scenarios.py::test_v2_grounding_cannot_be_bypassed_by_evidence_selection[legacy-only]
+3 failed, 2 passed, 27 deselected, 1 warning in 15.18s

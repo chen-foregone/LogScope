@@ -1,0 +1,165 @@
+{
+  "scenario": "redis-propagation",
+  "source": "simulated-http",
+  "model": "real-qwen-plus",
+  "status": "\u5df2\u5b8c\u6210",
+  "evidence": [
+    {
+      "source": "\u6765\u6e90\u4ee3\u53f7-ccab2bad8644346d4eeffb5b43b1995c08e3387c83ef89a8d43339aa81899ff7",
+      "occurred_at": "2026-11-01T00:15:00Z",
+      "query": {
+        "starts_at": "2026-11-01T00:00:00Z",
+        "ends_at": "2026-11-01T01:00:00Z",
+        "fields": {}
+      },
+      "snippet": {
+        "event": "request_failed",
+        "error_code": "NONE",
+        "fields": {
+          "email": "\u4ee3\u53f7-f37cfb8768bce265aa9d53b5df1ccee08c9b2eda484b31f712f336a766101374",
+          "correlation_id": "\u4ee3\u53f7-fef36bb5190c269ccc378e6f9d0abdf6b26354a0a671fc6a8571e046c8920ac8",
+          "token": "[\u5df2\u5c4f\u853d]"
+        },
+        "observation": {
+          "component": "gateway",
+          "signal": "http_response",
+          "http_status": 504
+        }
+      },
+      "locator": null,
+      "redaction_note": "\u53d7\u63a7\u7ed3\u6784\u5316\u4e8b\u4ef6v1\uff1a\u51ed\u636e\u5c4f\u853d\uff0c\u8eab\u4efd\u4e0e\u5173\u8054\u6807\u8bc6\u4f7f\u7528\u8c03\u67e5\u5185\u4ee3\u53f7\uff0c\u5b9a\u4f4d\u6574\u4f53\u4e0d\u53ef\u9006\u4ee3\u53f7\u5316\uff1b\u4e0d\u63a5\u6536\u81ea\u7531\u6587\u672c\u6216\u672a\u77e5\u5b57\u6bb5\u3002\u4ee3\u53f7\u5b9a\u4f4d\u987b\u7531\u53d7\u63a7\u6765\u6e90\u91cd\u65b0\u6838\u9a8c\uff0c\u4e0d\u80fd\u76f4\u63a5\u6253\u5f00\u539f\u94fe\u63a5\u3002",
+      "source_mode": "simulated",
+      "format": "controlled-event-v2",
+      "id": "fbf75d74-69a2-40ff-a2c1-9f04260fbe21",
+      "identity_status": "reliable",
+      "source_attempt_id": "7ce282c7-17dc-40cf-856b-8ae9a19d2f29",
+      "source_attempt_number": 1,
+      "source_access": "unknown",
+      "verification": "retained_structured_material",
+      "verification_version": 0,
+      "verification_history": []
+    },
+    {
+      "source": "\u6765\u6e90\u4ee3\u53f7-7b6ea52f066e800c7e76b9974e013614fd7ed384341c47c6e163c7149ca6b77a",
+      "occurred_at": "2026-11-01T00:15:00Z",
+      "query": {
+        "starts_at": "2026-11-01T00:00:00Z",
+        "ends_at": "2026-11-01T01:00:00Z",
+        "fields": {}
+      },
+      "snippet": {
+        "event": "request_failed",
+        "error_code": "ETIMEDOUT",
+        "fields": {
+          "email": "\u4ee3\u53f7-f37cfb8768bce265aa9d53b5df1ccee08c9b2eda484b31f712f336a766101374",
+          "correlation_id": "\u4ee3\u53f7-fef36bb5190c269ccc378e6f9d0abdf6b26354a0a671fc6a8571e046c8920ac8",
+          "token": "[\u5df2\u5c4f\u853d]"
+        },
+        "observation": {
+          "component": "application",
+          "signal": "request_timeout"
+        },
+        "causal_trace": {
+          "format": "observed-propagation-v1",
+          "dependency_error": "ETIMEDOUT",
+          "propagated_error": "ETIMEDOUT",
+          "request_outcome": "failed_by_dependency",
+          "local_rejection": "excluded_by_trace",
+          "independent_failure": "excluded_by_trace",
+          "contradiction": "none_observed"
+        }
+      },
+      "locator": null,
+      "redaction_note": "\u53d7\u63a7\u7ed3\u6784\u5316\u4e8b\u4ef6v1\uff1a\u51ed\u636e\u5c4f\u853d\uff0c\u8eab\u4efd\u4e0e\u5173\u8054\u6807\u8bc6\u4f7f\u7528\u8c03\u67e5\u5185\u4ee3\u53f7\uff0c\u5b9a\u4f4d\u6574\u4f53\u4e0d\u53ef\u9006\u4ee3\u53f7\u5316\uff1b\u4e0d\u63a5\u6536\u81ea\u7531\u6587\u672c\u6216\u672a\u77e5\u5b57\u6bb5\u3002\u4ee3\u53f7\u5b9a\u4f4d\u987b\u7531\u53d7\u63a7\u6765\u6e90\u91cd\u65b0\u6838\u9a8c\uff0c\u4e0d\u80fd\u76f4\u63a5\u6253\u5f00\u539f\u94fe\u63a5\u3002",
+      "source_mode": "simulated",
+      "format": "controlled-event-v2",
+      "id": "26d69114-f05f-4e0d-aedb-0f18ad2cb8e1",
+      "identity_status": "reliable",
+      "source_attempt_id": "7ce282c7-17dc-40cf-856b-8ae9a19d2f29",
+      "source_attempt_number": 1,
+      "source_access": "unknown",
+      "verification": "retained_structured_material",
+      "verification_version": 0,
+      "verification_history": []
+    },
+    {
+      "source": "\u6765\u6e90\u4ee3\u53f7-2e7ccafd5f112989da6b9a68316bf16a8a29737eb4ae9e11fcba14b5a933383c",
+      "occurred_at": "2026-11-01T00:15:00Z",
+      "query": {
+        "starts_at": "2026-11-01T00:00:00Z",
+        "ends_at": "2026-11-01T01:00:00Z",
+        "fields": {}
+      },
+      "snippet": {
+        "event": "dependency_failed",
+        "error_code": "ETIMEDOUT",
+        "fields": {
+          "email": "\u4ee3\u53f7-f37cfb8768bce265aa9d53b5df1ccee08c9b2eda484b31f712f336a766101374",
+          "correlation_id": "\u4ee3\u53f7-fef36bb5190c269ccc378e6f9d0abdf6b26354a0a671fc6a8571e046c8920ac8",
+          "token": "[\u5df2\u5c4f\u853d]"
+        },
+        "observation": {
+          "component": "redis",
+          "signal": "dependency_timeout"
+        }
+      },
+      "locator": null,
+      "redaction_note": "\u53d7\u63a7\u7ed3\u6784\u5316\u4e8b\u4ef6v1\uff1a\u51ed\u636e\u5c4f\u853d\uff0c\u8eab\u4efd\u4e0e\u5173\u8054\u6807\u8bc6\u4f7f\u7528\u8c03\u67e5\u5185\u4ee3\u53f7\uff0c\u5b9a\u4f4d\u6574\u4f53\u4e0d\u53ef\u9006\u4ee3\u53f7\u5316\uff1b\u4e0d\u63a5\u6536\u81ea\u7531\u6587\u672c\u6216\u672a\u77e5\u5b57\u6bb5\u3002\u4ee3\u53f7\u5b9a\u4f4d\u987b\u7531\u53d7\u63a7\u6765\u6e90\u91cd\u65b0\u6838\u9a8c\uff0c\u4e0d\u80fd\u76f4\u63a5\u6253\u5f00\u539f\u94fe\u63a5\u3002",
+      "source_mode": "simulated",
+      "format": "controlled-event-v2",
+      "id": "82fbe268-0324-470a-9b00-d690403370cf",
+      "identity_status": "reliable",
+      "source_attempt_id": "7ce282c7-17dc-40cf-856b-8ae9a19d2f29",
+      "source_attempt_number": 1,
+      "source_access": "unknown",
+      "verification": "retained_structured_material",
+      "verification_version": 0,
+      "verification_history": []
+    }
+  ],
+  "coverage": {
+    "complete": true,
+    "missing_sources": [],
+    "notice": "\u67e5\u8be2\u6210\u529f\u4e0d\u8868\u793a\u6ca1\u6709\u5f02\u5e38\uff1b\u67e5\u8be2\u72b6\u6001\u4e0d\u7b49\u4e8e\u8bc1\u636e\u8986\u76d6\u3002"
+  },
+  "conclusion": {
+    "id": "4199fde8-4a04-4298-84ef-91167ef49a30",
+    "version": 1,
+    "created_at": "2026-11-07T08:40:34.630489+00:00",
+    "format": "agent-analysis-v1",
+    "kind": "hypothesis",
+    "category": "dependency",
+    "verification": "insufficient",
+    "mechanism": null,
+    "phenomenon": "Request timeout originating from Redis dependency",
+    "causal_chain": "Three synchronized log entries at 2026-11-01T00:15:00Z show a cascading failure: gateway returns HTTP 504, application reports ETIMEDOUT with causal trace pointing to dependency failure, and Redis component explicitly logs ETIMEDOUT on dependency_timeout signal. The shared correlation_id and email token confirm these are traces of the same request. No evidence indicates retries, health metrics, or alternative paths were used.",
+    "alternatives": "Timeout could originate upstream of Redis (e.g., network infrastructure, Redis client misconfiguration, or Redis server overload), but no logs from those layers are present.",
+    "contradictions": "No evidence contradicts the dependency timeout hypothesis; all observed signals align with Redis-level timeout propagation.",
+    "evidence_ids": [
+      "fbf75d74-69a2-40ff-a2c1-9f04260fbe21",
+      "26d69114-f05f-4e0d-aedb-0f18ad2cb8e1",
+      "82fbe268-0324-470a-9b00-d690403370cf"
+    ],
+    "missing": [
+      "Redis server telemetry (CPU, memory, connection count, slowlog)",
+      "Network-layer diagnostics between application and Redis",
+      "Redis client configuration (timeout values, retry policy)"
+    ],
+    "recommendations": [
+      "Inspect Redis server resource utilization and latency metrics during the incident window.",
+      "Validate Redis client timeout configuration matches operational expectations.",
+      "Check for network instability or firewall interference between application and Redis."
+    ],
+    "boundary": "\u771f\u5b9e\u6a21\u578b\u5206\u6790\uff1b\u6a21\u62df\u65e5\u5fd7\u6765\u6e90\u3002\u6a21\u578b\u5224\u65ad\u4e0d\u662f\u56e0\u679c\u8bc1\u660e\uff0c\u5efa\u8bae\u4e0d\u4f1a\u81ea\u52a8\u6267\u884c\u3002"
+  },
+  "run": {
+    "model": "qwen-plus",
+    "phase": "completed",
+    "reason": "normal_completion",
+    "calls": 2,
+    "spent_microyuan": 4081,
+    "reserved_microyuan": 0,
+    "created_at": "2026-11-07T08:40:23.008683Z",
+    "updated_at": "2026-11-07T08:40:34.643588Z"
+  }
+}

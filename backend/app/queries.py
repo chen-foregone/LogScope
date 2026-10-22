@@ -308,6 +308,12 @@ async def execute_query(engine, sources, clock, schedule, investigation_id, atte
                                 payload = None
                             if payload is not None and payload.source_id != source_id:
                                 payload = None
+                            if payload is not None:
+                                from app.evidence import RecordV2
+                                role = getattr(adapter, 'component', None)
+                                if (role is not None and isinstance(payload.record, RecordV2)
+                                        and payload.record.observation.component != role):
+                                    payload = None
                             try:
                                 save_material(engine, clock, investigation_id, attempt_id, execution_id, payload, Response(),
                                               source_mode=getattr(adapter, 'mode', None))

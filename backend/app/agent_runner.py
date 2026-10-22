@@ -58,7 +58,7 @@ def evidence_context(connection, attempt_id):
             break
         if evidence_usable(connection, item):
             material = item['material']
-            result.append({'id': str(item['id']), 'source_mode': material.get('source_mode'),
+            result.append({'id': str(item['id']), 'source': material['source'], 'source_mode': material.get('source_mode'),
                            'occurred_at': material['occurred_at'], 'snippet': material.get('snippet')})
     return result
 
@@ -146,10 +146,17 @@ async def run_agent(engine, run, config, model, sources, schedule, clock):
             await execute_query(engine, sources, clock, schedule, investigation_id, run['attempt_id'],
                                 run['execution_id'], Response(), uuid4())
             with engine.begin() as connection:
-                locked_attempt(connection, run, clock)
+                row = locked_attempt(connection, run, clock)
                 materials = evidence_context(connection, run['attempt_id'])
+                from app.queries import query_views, query_coverage, coverage_aliases
+                coverage = query_coverage(query_views(connection, run['attempt_id']),
+                    coverage_aliases(connection, run['attempt_id'], row['source_ids']))
+                aliases = coverage_aliases(connection, run['attempt_id'], row['source_ids'])
+                registered = [{'source': alias, 'component': getattr(sources.get(source), 'component', None)}
+                              for source, alias in zip(row['source_ids'], aliases)]
             return {'messages': state['messages'] + [safe_reply, ToolMessage(
-                content=json.dumps({'evidence': materials}, ensure_ascii=True), tool_call_id=tool['id'])],
+                content=json.dumps({'evidence': materials, 'coverage': coverage, 'registered_sources': registered},
+                                   ensure_ascii=True), tool_call_id=tool['id'])],
                 'steps': state['steps'] + 1, 'done': False}
         if not isinstance(reply.content, str) or len(reply.content.encode()) > 32768:
             raise ValueError('Invalid model output')
@@ -198,6 +205,10 @@ def finish_run(engine, run, clock, reason):
         investigation_id = connection.execute(select(attempts.c.investigation_id).where(attempts.c.id == run['attempt_id'])).scalar_one()
         connection.execute(select(investigations.c.id).where(investigations.c.id == investigation_id).with_for_update()).one()
         row = connection.execute(select(attempts).where(attempts.c.id == run['attempt_id']).with_for_update()).mappings().one()
+        current = connection.execute(select(runs).where(runs.c.id == run['id'])).mappings().one()
+        if row['status'] == '已完成' and current['phase'] == 'completed' and not current['active']:
+            # save_agent_analysis already atomically finished this run and fenced writes.
+            return
         if connection.execute(select(queries.c.id).where(queries.c.attempt_id == run['attempt_id'], queries.c.active.is_(True))).first():
             # Unknown query exit: retain the active run and slot for process-based recovery.
             return

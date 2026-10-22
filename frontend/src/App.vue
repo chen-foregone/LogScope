@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import InvestigationListPanel from './components/InvestigationListPanel.vue'
 import RetentionStatus from './components/RetentionStatus.vue'
 import AgentRunStatus from './components/AgentRunStatus.vue'
+import EvidenceObservation from './components/EvidenceObservation.vue'
 import ArchiveActions from './components/ArchiveActions.vue'
 import CleanupActions from './components/CleanupActions.vue'
 import { useInvestigationList } from './composables/useInvestigationList'
@@ -12,7 +13,7 @@ type Evidence = {
   source_mode?: 'simulated'
   id: string; source: string; occurred_at: string
   query: { starts_at: string; ends_at: string; fields: Record<string, string> }
-  snippet: { event: string; error_code: string; fields: Record<string, string> } | null
+  snippet: { event: string; error_code: string; fields: Record<string, string>; observation?: { component: string; signal: string; http_status?: number; used?: number; capacity?: number; unit?: string } } | null
   locator: string | null; redaction_note: string
   source_attempt_id: string; source_attempt_number: number; verification: string
   source_access?: string; verification_history?: { version: number; reason: string; created_at: string; material_status: string }[]
@@ -587,6 +588,7 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
                   <dt>来源</dt><dd>{{ item.source }}</dd>
                   <dt>发生时间</dt><dd>{{ displayTime(item.occurred_at) }}</dd>
                   <dt>查询条件</dt><dd>{{ displayTime(item.query.starts_at) }} — {{ displayTime(item.query.ends_at) }}<pre>{{ JSON.stringify(item.query.fields, null, 2) }}</pre></dd>
+                  <dt v-if="item.snippet?.observation">结构化观测</dt><dd v-if="item.snippet?.observation"><EvidenceObservation :observation="item.snippet.observation" /></dd>
                   <dt>脱敏核验材料</dt><dd><pre>{{ JSON.stringify(item.snippet, null, 2) }}</pre></dd>
                   <dt>来源定位</dt><dd>{{ item.locator || '未提供定位；可核验材料为上述脱敏结构化片段' }}</dd>
                   <dt>脱敏说明</dt><dd>{{ item.redaction_note }}</dd>

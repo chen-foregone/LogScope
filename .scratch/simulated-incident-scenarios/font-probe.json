@@ -1,0 +1,15 @@
+[
+  {
+    "remote_fonts_blocked": false,
+    "status": "loaded",
+    "pending": []
+  },
+  {
+    "remote_fonts_blocked": true,
+    "status": "loaded",
+    "pending": [
+      "http://127.0.0.1:57772/api/investigations?q=&page=1&page_size=20",
+      "http://127.0.0.1:57772/api/services"
+    ]
+  }
+]

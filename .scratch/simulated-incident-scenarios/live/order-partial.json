@@ -1,0 +1,126 @@
+{
+  "scenario": "order-partial",
+  "source": "simulated-http",
+  "model": "real-qwen-plus",
+  "status": "\u5df2\u5b8c\u6210",
+  "evidence": [
+    {
+      "source": "\u6765\u6e90\u4ee3\u53f7-68b2676610fd580714cfd5bf69f7716dadc37c39c9ab9d9b4fe8ab6d195cde34",
+      "occurred_at": "2026-11-01T00:15:00Z",
+      "query": {
+        "starts_at": "2026-11-01T00:00:00Z",
+        "ends_at": "2026-11-01T01:00:00Z",
+        "fields": {}
+      },
+      "snippet": {
+        "event": "request_failed",
+        "error_code": "NONE",
+        "fields": {
+          "email": "\u4ee3\u53f7-a3a484f5cd7934768fa0b20cc5800814e7649f59394c5374e86926d25f756aa3",
+          "correlation_id": "\u4ee3\u53f7-ca02c7874bf002221b8eaba353cc41c15fe4327db0770bf3fc804381e4674f3b",
+          "token": "[\u5df2\u5c4f\u853d]"
+        },
+        "observation": {
+          "component": "gateway",
+          "signal": "http_response",
+          "http_status": 504
+        }
+      },
+      "locator": null,
+      "redaction_note": "\u53d7\u63a7\u7ed3\u6784\u5316\u4e8b\u4ef6v1\uff1a\u51ed\u636e\u5c4f\u853d\uff0c\u8eab\u4efd\u4e0e\u5173\u8054\u6807\u8bc6\u4f7f\u7528\u8c03\u67e5\u5185\u4ee3\u53f7\uff0c\u5b9a\u4f4d\u6574\u4f53\u4e0d\u53ef\u9006\u4ee3\u53f7\u5316\uff1b\u4e0d\u63a5\u6536\u81ea\u7531\u6587\u672c\u6216\u672a\u77e5\u5b57\u6bb5\u3002\u4ee3\u53f7\u5b9a\u4f4d\u987b\u7531\u53d7\u63a7\u6765\u6e90\u91cd\u65b0\u6838\u9a8c\uff0c\u4e0d\u80fd\u76f4\u63a5\u6253\u5f00\u539f\u94fe\u63a5\u3002",
+      "source_mode": "simulated",
+      "format": "controlled-event-v2",
+      "id": "ed3eb02d-7593-4a52-a1c4-db3c13c90486",
+      "identity_status": "reliable",
+      "source_attempt_id": "f71668c8-a4bd-4545-b9fc-c8bf6a3c6895",
+      "source_attempt_number": 1,
+      "source_access": "unknown",
+      "verification": "retained_structured_material",
+      "verification_version": 0,
+      "verification_history": []
+    },
+    {
+      "source": "\u6765\u6e90\u4ee3\u53f7-6c8c53b8f3378d65b68025add149a4e8b4503b7e0c88c0d7f85119a119544b47",
+      "occurred_at": "2026-11-01T00:15:00Z",
+      "query": {
+        "starts_at": "2026-11-01T00:00:00Z",
+        "ends_at": "2026-11-01T01:00:00Z",
+        "fields": {}
+      },
+      "snippet": {
+        "event": "request_failed",
+        "error_code": "ETIMEDOUT",
+        "fields": {
+          "email": "\u4ee3\u53f7-a3a484f5cd7934768fa0b20cc5800814e7649f59394c5374e86926d25f756aa3",
+          "correlation_id": "\u4ee3\u53f7-ca02c7874bf002221b8eaba353cc41c15fe4327db0770bf3fc804381e4674f3b",
+          "token": "[\u5df2\u5c4f\u853d]"
+        },
+        "observation": {
+          "component": "application",
+          "signal": "request_timeout"
+        }
+      },
+      "locator": null,
+      "redaction_note": "\u53d7\u63a7\u7ed3\u6784\u5316\u4e8b\u4ef6v1\uff1a\u51ed\u636e\u5c4f\u853d\uff0c\u8eab\u4efd\u4e0e\u5173\u8054\u6807\u8bc6\u4f7f\u7528\u8c03\u67e5\u5185\u4ee3\u53f7\uff0c\u5b9a\u4f4d\u6574\u4f53\u4e0d\u53ef\u9006\u4ee3\u53f7\u5316\uff1b\u4e0d\u63a5\u6536\u81ea\u7531\u6587\u672c\u6216\u672a\u77e5\u5b57\u6bb5\u3002\u4ee3\u53f7\u5b9a\u4f4d\u987b\u7531\u53d7\u63a7\u6765\u6e90\u91cd\u65b0\u6838\u9a8c\uff0c\u4e0d\u80fd\u76f4\u63a5\u6253\u5f00\u539f\u94fe\u63a5\u3002",
+      "source_mode": "simulated",
+      "format": "controlled-event-v2",
+      "id": "00472f42-5916-4f2d-b8a5-2bde95e42d96",
+      "identity_status": "reliable",
+      "source_attempt_id": "f71668c8-a4bd-4545-b9fc-c8bf6a3c6895",
+      "source_attempt_number": 1,
+      "source_access": "unknown",
+      "verification": "retained_structured_material",
+      "verification_version": 0,
+      "verification_history": []
+    }
+  ],
+  "coverage": {
+    "complete": false,
+    "missing_sources": [
+      "\u6765\u6e90\u4ee3\u53f7-63042753dc577c39fbf30a6637342679e644e673528be32bc0f76d3e99f3cbba",
+      "\u6765\u6e90\u4ee3\u53f7-f89b59fc7a05e2085cc84672845e27ee84165ec13886a09fd53390d4c6cfc128"
+    ],
+    "notice": "\u8986\u76d6\u4e0d\u5b8c\u6574\uff1a\u6765\u6e90\u5c1a\u672a\u67e5\u8be2\u6216\u4e0d\u53ef\u7528\uff0c\u4e0d\u80fd\u636e\u6b64\u6392\u9664\u539f\u56e0\uff1b\u67e5\u4e0d\u5230\u4e0d\u8868\u793a\u6ca1\u6709\u5f02\u5e38\u3002"
+  },
+  "conclusion": {
+    "id": "fd804f14-8983-4f33-83f2-ee9c8651579a",
+    "version": 1,
+    "created_at": "2026-11-07T08:42:01.024784+00:00",
+    "format": "agent-analysis-v1",
+    "kind": "hypothesis",
+    "category": "dependency",
+    "verification": "insufficient",
+    "mechanism": null,
+    "phenomenon": "HTTP 504 Gateway Timeout and ETIMEDOUT errors observed simultaneously for same correlation_id",
+    "causal_chain": "The gateway reported a 504 response while the application layer reported an ETIMEDOUT error, both tied to the same correlation_id and email. This suggests the application failed to respond within the gateway's timeout window. The root cause could reside in downstream dependencies (e.g., database or Redis), resource exhaustion, or blocking logic in the application itself \u2014 but no logs from those components are available to confirm.",
+    "alternatives": "The timeout could originate from network latency between gateway and application, misconfigured timeouts in either layer, or transient infrastructure issues not captured in available logs.",
+    "contradictions": "No evidence contradicts the timeout hypothesis; however, absence of database or Redis logs means failure in those layers cannot be confirmed or ruled out.",
+    "evidence_ids": [
+      "ed3eb02d-7593-4a52-a1c4-db3c13c90486",
+      "00472f42-5916-4f2d-b8a5-2bde95e42d96"
+    ],
+    "missing": [
+      "database logs",
+      "redis logs",
+      "application internal metrics (e.g., thread state, queue depth)",
+      "gateway timeout configuration"
+    ],
+    "recommendations": [
+      "Query missing database and Redis sources to check for errors or latency spikes during the same time window",
+      "Review gateway timeout settings and compare with application request processing times",
+      "Check for resource saturation (CPU, memory, connections) in the application service during the incident window",
+      "Correlate with infrastructure monitoring for network or host-level anomalies"
+    ],
+    "boundary": "\u771f\u5b9e\u6a21\u578b\u5206\u6790\uff1b\u6a21\u62df\u65e5\u5fd7\u6765\u6e90\u3002\u6a21\u578b\u5224\u65ad\u4e0d\u662f\u56e0\u679c\u8bc1\u660e\uff0c\u5efa\u8bae\u4e0d\u4f1a\u81ea\u52a8\u6267\u884c\u3002"
+  },
+  "run": {
+    "model": "qwen-plus",
+    "phase": "completed",
+    "reason": "normal_completion",
+    "calls": 2,
+    "spent_microyuan": 3886,
+    "reserved_microyuan": 0,
+    "created_at": "2026-11-07T08:41:49.804030Z",
+    "updated_at": "2026-11-07T08:42:01.038769Z"
+  }
+}

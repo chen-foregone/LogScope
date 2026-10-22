@@ -91,13 +91,17 @@ def save_agent_analysis(engine, clock, investigation_id, attempt_id, execution_i
             'evidence_ids': ids, 'missing': analysis.missing_evidence,
             'recommendations': analysis.recommendations,
             'boundary': '真实模型分析；模拟日志来源。模型判断不是因果证明，建议不会自动执行。'}
+        from app.observation_analysis import ground_observations
+        structured = any((item['material'].get('snippet') or {}).get('observation')
+                         for item in usable.values())
+        ground_observations(result, [usable[value]['material'] for value in ids], required=structured)
         if any(((item['material'].get('snippet') or {}).get('causal_trace') or {}).get(
                 'contradiction') == 'unresolved' for item in saved):
             # Structured source contradictions override a model's unsupported exclusion.
             result.update(phenomenon='本轮存在请求失败报告及未解决矛盾',
                 causal_chain='受控轨迹存在未解决矛盾，尚不能据此确定错误传播路径或根因。',
                 contradictions='本轮受控轨迹存在未解决矛盾；不能确认传播机制或排除其他原因。',
-                missing=['需要解决受控轨迹中的关键矛盾', *analysis.missing_evidence][:8])
+                missing=['需要解决受控轨迹中的关键矛盾', *result['missing']][:8])
         connection.execute(insert(conclusions).values(id=UUID(result['id']), attempt_id=attempt_id,
             execution_id=execution_id, version=result['version'], request_key=uuid4(),
             request_body=json.dumps(analysis.model_dump(mode='json'), sort_keys=True), created_at=now, material=result))

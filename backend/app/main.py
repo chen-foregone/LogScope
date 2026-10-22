@@ -18,7 +18,8 @@ def create_app(database_url: str | None = None, *, services_file=None, executor_
     services = load_services(services_file if services_file is not None else settings.services_file)
     if query_sources is None and settings.simulated_logs_url:
         from app.log_sources import SimulatedLogSource
-        query_sources = {source_id: SimulatedLogSource(settings.simulated_logs_url)
+        roles = {source: role for service in services.values() for source, role in service.source_roles.items()}
+        query_sources = {source_id: SimulatedLogSource(settings.simulated_logs_url, component=roles.get(source_id))
                          for service in services.values() for source_id in service.source_ids}
     engine = create_engine(database_url or settings.database_url, pool_pre_ping=True, hide_parameters=True)
 

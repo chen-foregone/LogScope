@@ -16,13 +16,16 @@ class CollectedLogs:
 class SimulatedLogSource:
     mode = 'simulated'
 
-    def __init__(self, base_url):
+    def __init__(self, base_url, *, component=None):
         parsed = urlsplit(base_url)
         if (parsed.scheme != 'http' or parsed.hostname != '127.0.0.1' or not parsed.port
                 or parsed.username or parsed.password or parsed.path not in ('', '/')
                 or parsed.query or parsed.fragment):
             raise ValueError('Mock source requires an explicit loopback HTTP origin')
         self.base_url = base_url.rstrip('/')
+        if component is not None and component not in ('gateway', 'application', 'database', 'redis'):
+            raise ValueError('Unsupported source component')
+        self.component = component
 
     async def query(self, *, source_id, starts_at, ends_at):
         try:

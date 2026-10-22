@@ -1,0 +1,201 @@
+............ssss........................................................ [ 12%]
+........................................................................ [ 24%]
+........................................................................ [ 36%]
+.............................................F....ssssssss.............. [ 49%]
+........................................................................ [ 61%]
+........................................................................ [ 73%]
+........................F............................................... [ 86%]
+................FF..FF.F..................F.F...F....................... [ 98%]
+........                                                                 [100%]
+================================== FAILURES ===================================
+_ test_empty_partial_and_unavailable_have_distinct_outcomes[order-partial-2-\u5df2\u5b8c\u6210-True] _
+backend\tests\test_incident_scenarios.py:208: in test_empty_partial_and_unavailable_have_distinct_outcomes
+    assert bool(observed[-1]['coverage']['missing_sources']) == missing
+    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+E   AssertionError: assert {'id': '2c74f...': '�����', ...} == {'id': '2c74f...': '�����', ...}
+E
+E     Omitting 17 identical items, use -vv to show
+E     Differing items:
+E     {'updated_at': '2026-11-07T08:50:02.827299Z'} != {'updated_at': '2026-11-07T08:50:02.811311Z'}
+E     {'attempts': [{'id': 'c959eeae-ad3d-4a14-ae15-44b95d8906f4', 'attempt_number': 1, 'service_id': 'orders', 'starts_at': '2026-11-01T00:00:00Z', ...}]} != {'attempts': [{'id': 'c959eeae-ad3d-4a14-ae15-44b95d8906f4', 'attempt_number': 1, 'service_id': 'orders', 'starts_at': '2026-11-01T00:00:00Z', ...}]}
+E     Use -v to get more diff
+______________ test_agent_restart_and_cleanup_keep_global_budget ______________
+backend\tests\test_release.py:94: in test_agent_restart_and_cleanup_keep_global_budget
+    assert restarted.get(path).json() == before
+E   AssertionError: assert {'id': 'ef636...': '�����', ...} == {'id': 'ef636...': '�����', ...}
+E
+E     Omitting 17 identical items, use -vv to show
+E     Differing items:
+E     {'updated_at': '2026-11-07T08:59:03.585062Z'} != {'updated_at': '2026-11-07T08:59:03.562845Z'}
+E     {'attempts': [{'id': '8d19ff75-4858-460a-a306-4ad4c3575cfe', 'attempt_number': 1, 'service_id': 'orders', 'starts_at': '2026-11-07T07:59:03.441628Z', ...}]} != {'attempts': [{'id': '8d19ff75-4858-460a-a306-4ad4c3575cfe', 'attempt_number': 1, 'service_id': 'orders', 'starts_at': '2026-11-07T07:59:03.441628Z', ...}]}
+E     Use -v to get more diff
+_ test_unconfirmed_start_survives_fast_terminal_refresh_and_isolates_investigations[spa] _
+tests\test_ui.py:350: in test_unconfirmed_start_survives_fast_terminal_refresh_and_isolates_investigations
+    page.goto(BASE + '/#' + route_path)
+.venv\Lib\site-packages\playwright\sync_api\_generated.py:18528: in goto
+    self._sync(
+.venv\Lib\site-packages\playwright\_impl\_page.py:564: in goto
+    return await self._main_frame.goto(**locals_to_params(locals()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\playwright\_impl\_frame.py:157: in goto
+    await self._channel.send(
+.venv\Lib\site-packages\playwright\_impl\_connection.py:78: in send
+    return await self._connection.wrap_api_call(
+.venv\Lib\site-packages\playwright\_impl\_connection.py:636: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Page.goto: Timeout 30000ms exceeded.
+E   Call log:
+E     - navigating to "http://127.0.0.1:5275/#/investigations/b9e52344-ef2c-4630-914f-1a5b3933346b", waiting until "load"
+---------------------------- Captured stdout setup ----------------------------
+UI����schema: issue03_ui_5b76b86d5fc549e19aff140f700caded
+_ test_unconfirmed_start_survives_fast_terminal_refresh_and_isolates_investigations[reload] _
+tests\test_ui.py:350: in test_unconfirmed_start_survives_fast_terminal_refresh_and_isolates_investigations
+    page.goto(BASE + '/#' + route_path)
+.venv\Lib\site-packages\playwright\sync_api\_generated.py:18528: in goto
+    self._sync(
+.venv\Lib\site-packages\playwright\_impl\_page.py:564: in goto
+    return await self._main_frame.goto(**locals_to_params(locals()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\playwright\_impl\_frame.py:157: in goto
+    await self._channel.send(
+.venv\Lib\site-packages\playwright\_impl\_connection.py:78: in send
+    return await self._connection.wrap_api_call(
+.venv\Lib\site-packages\playwright\_impl\_connection.py:636: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Page.goto: Timeout 30000ms exceeded.
+E   Call log:
+E     - navigating to "http://127.0.0.1:5275/#/investigations/0806b286-b48d-4a9e-a3c4-ff47c2f97942", waiting until "load"
+---------------------------- Captured stdout setup ----------------------------
+UI����schema: issue03_ui_e2c74379172043e39e6ada3cdecbf497
+_ test_supported_absolute_pending_survives_lost_response_reload[2026-11-01T00:00Z-2026-11-01T01:00Z] _
+tests\test_ui.py:423: in test_supported_absolute_pending_survives_lost_response_reload
+    page.goto(BASE + '/#/investigations/' + record['id'])
+.venv\Lib\site-packages\playwright\sync_api\_generated.py:18528: in goto
+    self._sync(
+.venv\Lib\site-packages\playwright\_impl\_page.py:564: in goto
+    return await self._main_frame.goto(**locals_to_params(locals()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\playwright\_impl\_frame.py:157: in goto
+    await self._channel.send(
+.venv\Lib\site-packages\playwright\_impl\_connection.py:78: in send
+    return await self._connection.wrap_api_call(
+.venv\Lib\site-packages\playwright\_impl\_connection.py:636: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Page.goto: Timeout 30000ms exceeded.
+E   Call log:
+E     - navigating to "http://127.0.0.1:5275/#/investigations/914e28b5-b51c-4b5b-b64a-83108b02332a", waiting until "load"
+---------------------------- Captured stdout setup ----------------------------
+UI����schema: issue03_ui_f2874c9c83944e31b4738902c60cc8fb
+_ test_supported_absolute_pending_survives_lost_response_reload[2026-11-01T00:00+08:00-2026-11-01T01:00+08:00] _
+tests\test_ui.py:423: in test_supported_absolute_pending_survives_lost_response_reload
+    page.goto(BASE + '/#/investigations/' + record['id'])
+.venv\Lib\site-packages\playwright\sync_api\_generated.py:18528: in goto
+    self._sync(
+.venv\Lib\site-packages\playwright\_impl\_page.py:564: in goto
+    return await self._main_frame.goto(**locals_to_params(locals()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\playwright\_impl\_frame.py:157: in goto
+    await self._channel.send(
+.venv\Lib\site-packages\playwright\_impl\_connection.py:78: in send
+    return await self._connection.wrap_api_call(
+.venv\Lib\site-packages\playwright\_impl\_connection.py:636: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Page.goto: Timeout 30000ms exceeded.
+E   Call log:
+E     - navigating to "http://127.0.0.1:5275/#/investigations/b668d9f1-26fb-4248-a9fc-5dd25db4f223", waiting until "load"
+---------------------------- Captured stdout setup ----------------------------
+UI����schema: issue03_ui_fc4be190f9e948dd93bb5a7e6e5b0d14
+_ test_supported_absolute_pending_survives_lost_response_reload[2026-11-01T00:00z-2026-11-01T01:00z] _
+tests\test_ui.py:423: in test_supported_absolute_pending_survives_lost_response_reload
+    page.goto(BASE + '/#/investigations/' + record['id'])
+.venv\Lib\site-packages\playwright\sync_api\_generated.py:18528: in goto
+    self._sync(
+.venv\Lib\site-packages\playwright\_impl\_page.py:564: in goto
+    return await self._main_frame.goto(**locals_to_params(locals()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\playwright\_impl\_frame.py:157: in goto
+    await self._channel.send(
+.venv\Lib\site-packages\playwright\_impl\_connection.py:78: in send
+    return await self._connection.wrap_api_call(
+.venv\Lib\site-packages\playwright\_impl\_connection.py:636: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Page.goto: Timeout 30000ms exceeded.
+E   Call log:
+E     - navigating to "http://127.0.0.1:5275/#/investigations/1218ad6a-4fe5-46dc-b76c-894530813cef", waiting until "load"
+---------------------------- Captured stdout setup ----------------------------
+UI����schema: issue03_ui_2de3929f352f43c7a1569c7d801da544
+_ test_unrecoverable_pending_blocks_start_but_keeps_details_readable[oversized-range] _
+tests\test_ui.py:543: in test_unrecoverable_pending_blocks_start_but_keeps_details_readable
+    page.goto(BASE + '/#/investigations/' + record['id'])
+.venv\Lib\site-packages\playwright\sync_api\_generated.py:18528: in goto
+    self._sync(
+.venv\Lib\site-packages\playwright\_impl\_page.py:564: in goto
+    return await self._main_frame.goto(**locals_to_params(locals()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\playwright\_impl\_frame.py:157: in goto
+    await self._channel.send(
+.venv\Lib\site-packages\playwright\_impl\_connection.py:78: in send
+    return await self._connection.wrap_api_call(
+.venv\Lib\site-packages\playwright\_impl\_connection.py:636: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Page.goto: Timeout 30000ms exceeded.
+E   Call log:
+E     - navigating to "http://127.0.0.1:5275/#/investigations/2b102301-7d88-48b2-b9a5-d315ae3d6af7", waiting until "load"
+---------------------------- Captured stdout setup ----------------------------
+UI����schema: issue03_ui_9fc1dbcf4943406dab2db9193317cadb
+_ test_unrecoverable_pending_blocks_start_but_keeps_details_readable[read-denied] _
+tests\test_ui.py:543: in test_unrecoverable_pending_blocks_start_but_keeps_details_readable
+    page.goto(BASE + '/#/investigations/' + record['id'])
+.venv\Lib\site-packages\playwright\sync_api\_generated.py:18528: in goto
+    self._sync(
+.venv\Lib\site-packages\playwright\_impl\_page.py:564: in goto
+    return await self._main_frame.goto(**locals_to_params(locals()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\playwright\_impl\_frame.py:157: in goto
+    await self._channel.send(
+.venv\Lib\site-packages\playwright\_impl\_connection.py:78: in send
+    return await self._connection.wrap_api_call(
+.venv\Lib\site-packages\playwright\_impl\_connection.py:636: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Page.goto: Timeout 30000ms exceeded.
+E   Call log:
+E     - navigating to "http://127.0.0.1:5275/#/investigations/3b5e8a1d-b4d6-4752-a9ef-285b7c3b7d5f", waiting until "load"
+---------------------------- Captured stdout setup ----------------------------
+UI����schema: issue03_ui_3b19a17571bd4cbf980bf9b326b083d9
+_ test_unrecoverable_pending_blocks_start_but_keeps_details_readable[equal-range] _
+tests\test_ui.py:543: in test_unrecoverable_pending_blocks_start_but_keeps_details_readable
+    page.goto(BASE + '/#/investigations/' + record['id'])
+.venv\Lib\site-packages\playwright\sync_api\_generated.py:18528: in goto
+    self._sync(
+.venv\Lib\site-packages\playwright\_impl\_page.py:564: in goto
+    return await self._main_frame.goto(**locals_to_params(locals()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\playwright\_impl\_frame.py:157: in goto
+    await self._channel.send(
+.venv\Lib\site-packages\playwright\_impl\_connection.py:78: in send
+    return await self._connection.wrap_api_call(
+.venv\Lib\site-packages\playwright\_impl\_connection.py:636: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Page.goto: Timeout 30000ms exceeded.
+E   Call log:
+E     - navigating to "http://127.0.0.1:5275/#/investigations/4483e0ab-6539-40fc-8558-dcb09b8dfe43", waiting until "load"
+---------------------------- Captured stdout setup ----------------------------
+UI����schema: issue03_ui_2ef0665ba7584f94b5f81103fb640024
+============================== warnings summary ===============================
+backend/tests/test_agent_runtime.py::test_agent_persists_analysis_and_cost_without_raw_question
+  C:\Users\c1342\WorkBuddy\log-scope\.venv\Lib\site-packages\langgraph\cache\base\__init__.py:8: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED backend/tests/test_incident_scenarios.py::test_empty_partial_and_unavailable_have_distinct_outcomes[order-partial-2-\u5df2\u5b8c\u6210-True]
+FAILED backend/tests/test_release.py::test_agent_restart_and_cleanup_keep_global_budget
+FAILED tests/test_ui.py::test_unconfirmed_start_survives_fast_terminal_refresh_and_isolates_investigations[spa]
+FAILED tests/test_ui.py::test_unconfirmed_start_survives_fast_terminal_refresh_and_isolates_investigations[reload]
+FAILED tests/test_ui.py::test_supported_absolute_pending_survives_lost_response_reload[2026-11-01T00:00Z-2026-11-01T01:00Z]
+FAILED tests/test_ui.py::test_supported_absolute_pending_survives_lost_response_reload[2026-11-01T00:00+08:00-2026-11-01T01:00+08:00]
+FAILED tests/test_ui.py::test_supported_absolute_pending_survives_lost_response_reload[2026-11-01T00:00z-2026-11-01T01:00z]
+FAILED tests/test_ui.py::test_unrecoverable_pending_blocks_start_but_keeps_details_readable[oversized-range]
+FAILED tests/test_ui.py::test_unrecoverable_pending_blocks_start_but_keeps_details_readable[read-denied]
+FAILED tests/test_ui.py::test_unrecoverable_pending_blocks_start_but_keeps_details_readable[equal-range]
+10 failed, 562 passed, 12 skipped, 1 warning in 2261.79s (0:37:41)

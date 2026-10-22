@@ -3,29 +3,38 @@ import asyncio
 from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Query, Request, Response
+from app.incident_scenarios import SCENARIOS, SOURCES, collect
 
 
 def create_mock_logs(scenario='normal'):
     allowed = {'normal', 'empty', 'unidentified', 'conflict', 'invalid', 'permission',
                'credentials', 'parameters', 'temporary', 'limited', 'timeout'}
-    if scenario not in allowed:
+    if scenario not in allowed and scenario not in SCENARIOS:
         raise ValueError('Unknown mock scenario')
     app = FastAPI(docs_url=None, redoc_url=None, openapi_url=None)
     app.state.disconnected_requests = 0
-    calls = 0
+    calls = {}
 
     @app.get('/v1/logs')
     async def logs(request: Request, source_id: str = Query(pattern=r'^[a-zA-Z0-9_-]{1,120}$'),
                    starts_at: datetime = Query(), ends_at: datetime = Query()):
-        nonlocal calls
         if (starts_at.tzinfo is None or ends_at.tzinfo is None or
                 not 0 < (ends_at - starts_at).total_seconds() <= 86400):
             raise HTTPException(422, 'Invalid range')
-        calls += 1
+        calls[source_id] = calls.get(source_id, 0) + 1
+        if scenario in SCENARIOS:
+            if source_id not in SOURCES:
+                raise HTTPException(422, 'Unknown synthetic source')
+            if scenario == 'order-unavailable' or (scenario == 'order-partial' and source_id in ('sim-database', 'sim-redis')):
+                raise HTTPException(403, 'Synthetic source permission denied')
+            try:
+                return {'protocol': 'simulated-logs-v1', 'items': collect(scenario, source_id, starts_at, ends_at)}
+            except ValueError:
+                raise HTTPException(422, 'Unknown synthetic source') from None
         status = {'permission': 403, 'credentials': 401, 'parameters': 422, 'limited': 429}.get(scenario)
         if status:
             raise HTTPException(status, 'Synthetic source failure', headers={'Retry-After': '60'} if status == 429 else None)
-        if scenario == 'temporary' and calls <= 2:
+        if scenario == 'temporary' and calls[source_id] <= 2:
             raise HTTPException(503, 'Temporary source failure')
         if scenario == 'timeout':
             for _ in range(350):

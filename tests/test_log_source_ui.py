@@ -18,7 +18,8 @@ def evidence_executor(database_url):
     return database_url
 
 
-@pytest.mark.parametrize('scenario,count', [('normal', 2), ('unidentified', 3), ('invalid', 2)])
+@pytest.mark.parametrize('scenario,count', [('normal', 2), ('unidentified', 3), ('invalid', 2),
+                                         ('database-pool', 3), ('redis-contradiction', 3)])
 def test_simulated_http_evidence_visible_after_reload(evidence_executor, tmp_path, external_source, scenario, count):
     from app.log_sources import SimulatedLogSource
     credential = uuid4().hex
@@ -34,15 +35,20 @@ def test_simulated_http_evidence_visible_after_reload(evidence_executor, tmp_pat
     server = ThreadingHTTPServer(('127.0.0.1', 0), handler)
     thread = threading.Thread(target=server.serve_forever, daemon=True)
     thread.start()
-    with configured_client(evidence_executor, tmp_path, executor_credential=credential,
-                           query_sources={'controlled-orders': SimulatedLogSource(external_source(scenario))}) as api:
+    from test_incident_scenarios import scenario_client
+    source_url = external_source(scenario)
+    application = (scenario_client(evidence_executor, tmp_path, source_url, credential)
+                   if scenario in ('database-pool', 'redis-contradiction') else
+                   configured_client(evidence_executor, tmp_path, executor_credential=credential,
+                       query_sources={'controlled-orders': SimulatedLogSource(source_url)}))
+    with application as api:
         path, record, evidence, auth = started(api, credential)
         assert api.post(evidence.removesuffix('/evidence') + '/queries',
                         headers={**auth, 'Idempotency-Key': str(uuid4())}).status_code == 201
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             try:
-                page = browser.new_page()
+                page = browser.new_page(viewport={'width': 390, 'height': 844})
 
                 def api_route(route):
                     from urllib.parse import urlsplit
@@ -55,7 +61,7 @@ def test_simulated_http_evidence_visible_after_reload(evidence_executor, tmp_pat
                 page.route('**/api/**', api_route)
                 page.goto(f'http://127.0.0.1:{server.server_port}/#/investigations/' + record['id'])
                 for _ in range(2):
-                    expect(page.get_by_role('note').filter(has_text='模拟外部日志来源')).to_be_visible()
+                    expect(page.get_by_role('note').filter(has_text='模拟外部日志来源').first).to_be_visible()
                     expect(page.get_by_text(f'本轮证据条数：{count}', exact=False)).to_be_visible()
                     expect(page.get_by_label('脱敏证据', exact=True)).to_have_count(count)
                     if scenario == 'unidentified':
@@ -63,7 +69,16 @@ def test_simulated_http_evidence_visible_after_reload(evidence_executor, tmp_pat
                     if scenario == 'invalid':
                         expect(page.get_by_text('原因：适配器能力或返回不符合受控契约')).to_be_visible()
                         expect(page.get_by_text('缺失来源：', exact=False)).to_be_visible()
+                    if scenario in ('database-pool', 'redis-contradiction'):
+                        expect(page.get_by_label('结构化观测', exact=True)).to_have_count(3)
+                        expect(page.get_by_text('HTTP 状态：504', exact=True)).to_be_visible()
+                        expect(page.get_by_text('组件：网关', exact=False)).to_be_visible()
+                        if scenario == 'database-pool':
+                            expect(page.get_by_text('连接数：100 / 100', exact=True)).to_be_visible()
+                        else:
+                            expect(page.get_by_text('组件：Redis', exact=False)).to_be_visible()
                     assert 'synthetic-secret' not in page.locator('body').inner_text()
+                    assert page.evaluate('document.documentElement.scrollWidth <= innerWidth')
                     page.reload()
             finally:
                 browser.close()

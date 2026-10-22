@@ -1,0 +1,161 @@
+{
+  "scenario": "database-pool",
+  "source": "simulated-http",
+  "model": "real-qwen-plus",
+  "status": "\u5df2\u5b8c\u6210",
+  "evidence": [
+    {
+      "source": "\u6765\u6e90\u4ee3\u53f7-7cdb982f85069e6788321f0acd3061d78da9051d0951ad76eb3780927eae0c63",
+      "occurred_at": "2026-11-01T00:15:00Z",
+      "query": {
+        "starts_at": "2026-11-01T00:00:00Z",
+        "ends_at": "2026-11-01T01:00:00Z",
+        "fields": {}
+      },
+      "snippet": {
+        "event": "request_failed",
+        "error_code": "NONE",
+        "fields": {
+          "email": "\u4ee3\u53f7-24af5502bfb3580100e725266fd65507de86e81e7f4f05e68dd01a5952cd71b4",
+          "correlation_id": "\u4ee3\u53f7-089cfa07fc5241e205371ca7d1c45fa2d97ab7a9a8825dd6e939fb27a46c1da6",
+          "token": "[\u5df2\u5c4f\u853d]"
+        },
+        "observation": {
+          "component": "gateway",
+          "signal": "http_response",
+          "http_status": 504
+        }
+      },
+      "locator": null,
+      "redaction_note": "\u53d7\u63a7\u7ed3\u6784\u5316\u4e8b\u4ef6v1\uff1a\u51ed\u636e\u5c4f\u853d\uff0c\u8eab\u4efd\u4e0e\u5173\u8054\u6807\u8bc6\u4f7f\u7528\u8c03\u67e5\u5185\u4ee3\u53f7\uff0c\u5b9a\u4f4d\u6574\u4f53\u4e0d\u53ef\u9006\u4ee3\u53f7\u5316\uff1b\u4e0d\u63a5\u6536\u81ea\u7531\u6587\u672c\u6216\u672a\u77e5\u5b57\u6bb5\u3002\u4ee3\u53f7\u5b9a\u4f4d\u987b\u7531\u53d7\u63a7\u6765\u6e90\u91cd\u65b0\u6838\u9a8c\uff0c\u4e0d\u80fd\u76f4\u63a5\u6253\u5f00\u539f\u94fe\u63a5\u3002",
+      "source_mode": "simulated",
+      "format": "controlled-event-v2",
+      "id": "6fd10ec7-11a6-4385-9c3f-4b2434bc8e33",
+      "identity_status": "reliable",
+      "source_attempt_id": "042bfc68-21f1-4f10-9465-c41b8bcd4bf5",
+      "source_attempt_number": 1,
+      "source_access": "unknown",
+      "verification": "retained_structured_material",
+      "verification_version": 0,
+      "verification_history": []
+    },
+    {
+      "source": "\u6765\u6e90\u4ee3\u53f7-42c035c1da957c86eacb901edf079559c6613a4d4ea6b8717b9d3b9d32eb1f89",
+      "occurred_at": "2026-11-01T00:15:00Z",
+      "query": {
+        "starts_at": "2026-11-01T00:00:00Z",
+        "ends_at": "2026-11-01T01:00:00Z",
+        "fields": {}
+      },
+      "snippet": {
+        "event": "request_failed",
+        "error_code": "ETIMEDOUT",
+        "fields": {
+          "email": "\u4ee3\u53f7-24af5502bfb3580100e725266fd65507de86e81e7f4f05e68dd01a5952cd71b4",
+          "correlation_id": "\u4ee3\u53f7-089cfa07fc5241e205371ca7d1c45fa2d97ab7a9a8825dd6e939fb27a46c1da6",
+          "token": "[\u5df2\u5c4f\u853d]"
+        },
+        "observation": {
+          "component": "application",
+          "signal": "request_timeout"
+        }
+      },
+      "locator": null,
+      "redaction_note": "\u53d7\u63a7\u7ed3\u6784\u5316\u4e8b\u4ef6v1\uff1a\u51ed\u636e\u5c4f\u853d\uff0c\u8eab\u4efd\u4e0e\u5173\u8054\u6807\u8bc6\u4f7f\u7528\u8c03\u67e5\u5185\u4ee3\u53f7\uff0c\u5b9a\u4f4d\u6574\u4f53\u4e0d\u53ef\u9006\u4ee3\u53f7\u5316\uff1b\u4e0d\u63a5\u6536\u81ea\u7531\u6587\u672c\u6216\u672a\u77e5\u5b57\u6bb5\u3002\u4ee3\u53f7\u5b9a\u4f4d\u987b\u7531\u53d7\u63a7\u6765\u6e90\u91cd\u65b0\u6838\u9a8c\uff0c\u4e0d\u80fd\u76f4\u63a5\u6253\u5f00\u539f\u94fe\u63a5\u3002",
+      "source_mode": "simulated",
+      "format": "controlled-event-v2",
+      "id": "566d71da-4bc0-4d4c-8bf2-f8633e39cf1f",
+      "identity_status": "reliable",
+      "source_attempt_id": "042bfc68-21f1-4f10-9465-c41b8bcd4bf5",
+      "source_attempt_number": 1,
+      "source_access": "unknown",
+      "verification": "retained_structured_material",
+      "verification_version": 0,
+      "verification_history": []
+    },
+    {
+      "source": "\u6765\u6e90\u4ee3\u53f7-9d7731f2dc94123edd0e6cc20f5ef7dcaab60de86080e4de836f102173b1765a",
+      "occurred_at": "2026-11-01T00:15:00Z",
+      "query": {
+        "starts_at": "2026-11-01T00:00:00Z",
+        "ends_at": "2026-11-01T01:00:00Z",
+        "fields": {}
+      },
+      "snippet": {
+        "event": "dependency_failed",
+        "error_code": "NONE",
+        "fields": {
+          "email": "\u4ee3\u53f7-24af5502bfb3580100e725266fd65507de86e81e7f4f05e68dd01a5952cd71b4",
+          "correlation_id": "\u4ee3\u53f7-089cfa07fc5241e205371ca7d1c45fa2d97ab7a9a8825dd6e939fb27a46c1da6",
+          "token": "[\u5df2\u5c4f\u853d]"
+        },
+        "observation": {
+          "component": "database",
+          "signal": "pool_capacity",
+          "used": 100,
+          "capacity": 100,
+          "unit": "connections"
+        }
+      },
+      "locator": null,
+      "redaction_note": "\u53d7\u63a7\u7ed3\u6784\u5316\u4e8b\u4ef6v1\uff1a\u51ed\u636e\u5c4f\u853d\uff0c\u8eab\u4efd\u4e0e\u5173\u8054\u6807\u8bc6\u4f7f\u7528\u8c03\u67e5\u5185\u4ee3\u53f7\uff0c\u5b9a\u4f4d\u6574\u4f53\u4e0d\u53ef\u9006\u4ee3\u53f7\u5316\uff1b\u4e0d\u63a5\u6536\u81ea\u7531\u6587\u672c\u6216\u672a\u77e5\u5b57\u6bb5\u3002\u4ee3\u53f7\u5b9a\u4f4d\u987b\u7531\u53d7\u63a7\u6765\u6e90\u91cd\u65b0\u6838\u9a8c\uff0c\u4e0d\u80fd\u76f4\u63a5\u6253\u5f00\u539f\u94fe\u63a5\u3002",
+      "source_mode": "simulated",
+      "format": "controlled-event-v2",
+      "id": "ed8ad368-8d41-434d-8e8f-96511c3030cd",
+      "identity_status": "reliable",
+      "source_attempt_id": "042bfc68-21f1-4f10-9465-c41b8bcd4bf5",
+      "source_attempt_number": 1,
+      "source_access": "unknown",
+      "verification": "retained_structured_material",
+      "verification_version": 0,
+      "verification_history": []
+    }
+  ],
+  "coverage": {
+    "complete": true,
+    "missing_sources": [],
+    "notice": "\u67e5\u8be2\u6210\u529f\u4e0d\u8868\u793a\u6ca1\u6709\u5f02\u5e38\uff1b\u67e5\u8be2\u72b6\u6001\u4e0d\u7b49\u4e8e\u8bc1\u636e\u8986\u76d6\u3002"
+  },
+  "conclusion": {
+    "id": "cd994584-1442-419f-b8c3-49905c09d82c",
+    "version": 1,
+    "created_at": "2026-11-07T08:41:08.328800+00:00",
+    "format": "agent-analysis-v1",
+    "kind": "hypothesis",
+    "category": "resource",
+    "verification": "insufficient",
+    "mechanism": null,
+    "phenomenon": "Database connection pool exhaustion causing request timeouts and gateway 504 errors",
+    "causal_chain": "Three simultaneous log entries at 2026-11-01T00:15:00Z show correlated failures across gateway (504), application (ETIMEDOUT), and database (100% pool capacity). The database observation explicitly reports 'used': 100, 'capacity': 100 connections, confirming resource exhaustion as the root cause. This directly explains both the application-level timeout and the gateway's upstream timeout (504).",
+    "alternatives": "Transient network partition between application and database; sudden spike in concurrent requests exceeding provisioned pool size; misconfigured pool settings (e.g., max connections too low); long-running queries holding connections open.",
+    "contradictions": "No evidence of infrastructure-level network failure (e.g., no ICMP or TCP handshake failures logged); no indication of database process crash or restart; no evidence of authentication or permission denial preventing new connections.",
+    "evidence_ids": [
+      "6fd10ec7-11a6-4385-9c3f-4b2434bc8e33",
+      "566d71da-4bc0-4d4c-8bf2-f8633e39cf1f",
+      "ed8ad368-8d41-434d-8e8f-96511c3030cd"
+    ],
+    "missing": [
+      "Query duration histograms for active database connections",
+      "Application-level metrics on connection acquisition wait times",
+      "Historical pool usage trends preceding the incident",
+      "Database query logs showing slow or blocking queries"
+    ],
+    "recommendations": [
+      "Increase database connection pool capacity or tune pool configuration (e.g., min/max, idle timeout)",
+      "Implement application-level circuit breaker or retry with backoff for database calls",
+      "Add monitoring and alerting on database pool utilization > 90%",
+      "Audit long-running queries and optimize or time-limit them"
+    ],
+    "boundary": "\u771f\u5b9e\u6a21\u578b\u5206\u6790\uff1b\u6a21\u62df\u65e5\u5fd7\u6765\u6e90\u3002\u6a21\u578b\u5224\u65ad\u4e0d\u662f\u56e0\u679c\u8bc1\u660e\uff0c\u5efa\u8bae\u4e0d\u4f1a\u81ea\u52a8\u6267\u884c\u3002"
+  },
+  "run": {
+    "model": "qwen-plus",
+    "phase": "completed",
+    "reason": "normal_completion",
+    "calls": 2,
+    "spent_microyuan": 4195,
+    "reserved_microyuan": 0,
+    "created_at": "2026-11-07T08:40:55.171519Z",
+    "updated_at": "2026-11-07T08:41:08.343570Z"
+  }
+}

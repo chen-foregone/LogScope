@@ -78,11 +78,59 @@ class CausalTrace(StrictInput):
     contradiction: Literal['none_observed', 'unresolved']
 
 
+class Observation(StrictInput):
+    component: Literal['gateway', 'application', 'database', 'redis']
+    signal: Literal['http_response', 'request_timeout', 'dependency_timeout', 'pool_capacity',
+                    'configuration_missing', 'permission_denied']
+    http_status: int | None = Field(default=None, ge=100, le=599)
+    used: int | None = Field(default=None, ge=0, le=1_000_000)
+    capacity: int | None = Field(default=None, ge=1, le=1_000_000)
+    unit: Literal['connections'] | None = None
+
+    @model_validator(mode='after')
+    def coherent(self):
+        if self.signal == 'http_response':
+            if self.component != 'gateway' or self.http_status is None or any(
+                    value is not None for value in (self.used, self.capacity, self.unit)):
+                raise ValueError('Invalid HTTP observation')
+        elif self.signal == 'pool_capacity':
+            if (self.component != 'database' or self.used is None or self.capacity is None
+                    or self.used > self.capacity or self.unit != 'connections' or self.http_status is not None):
+                raise ValueError('Invalid pool observation')
+        elif any(value is not None for value in (self.http_status, self.used, self.capacity, self.unit)):
+            raise ValueError('Unexpected observation measurements')
+        if self.signal == 'request_timeout' and self.component != 'application':
+            raise ValueError('Invalid request component')
+        if self.signal == 'dependency_timeout' and self.component not in ('redis', 'database'):
+            raise ValueError('Invalid dependency component')
+        return self
+
+
 class Record(StrictInput):
     event: Literal['request_failed', 'request_completed', 'dependency_failed']
     error_code: Literal['ETIMEDOUT', 'ECONNREFUSED', 'EACCES', 'HTTP_400', 'HTTP_401', 'HTTP_403', 'HTTP_404', 'HTTP_429', 'HTTP_500', 'HTTP_502', 'HTTP_503', 'NONE']
     fields: Fields
     causal_trace: CausalTrace | None = None
+
+
+class RecordV2(Record):
+    observation: Observation
+
+    @model_validator(mode='after')
+    def observation_matches(self):
+        expected = {'request_timeout': ('request_failed', 'ETIMEDOUT'),
+                    'dependency_timeout': ('dependency_failed', 'ETIMEDOUT'),
+                    'pool_capacity': ('dependency_failed', 'NONE'),
+                    'configuration_missing': ('request_failed', 'NONE'),
+                    'permission_denied': ('request_failed', 'EACCES')}
+        if self.observation.signal == 'http_response':
+            if self.error_code != 'NONE' or self.event != ('request_failed' if self.observation.http_status >= 400 else 'request_completed'):
+                raise ValueError('HTTP event mismatch')
+        elif (self.event, self.error_code) != expected[self.observation.signal]:
+            raise ValueError('Observation event mismatch')
+        if self.causal_trace and self.observation.signal != 'request_timeout':
+            raise ValueError('Trace requires application request timeout')
+        return self
 
 
 class RecordIdentity(StrictInput):
@@ -101,18 +149,20 @@ class FileIdentity(StrictInput):
 
 
 class Material(StrictInput):
-    format: Literal['controlled-event-v1', 'controlled-location-v1']
+    format: Literal['controlled-event-v1', 'controlled-location-v1', 'controlled-event-v2']
     source_id: str = Field(min_length=1, max_length=120)
     occurred_at: AwareDatetime
     query: Query
-    record: Record | None
+    record: Record | RecordV2 | None
     locator: str | None = Field(default=None, min_length=1, max_length=4096)
     identity: Annotated[RecordIdentity | FileIdentity, Field(discriminator='kind')] | None = None
 
     @model_validator(mode='after')
     def material_kind(self):
-        if self.format == 'controlled-event-v1' and self.record is None:
+        if self.format in ('controlled-event-v1', 'controlled-event-v2') and self.record is None:
             raise ValueError('event requires retained material')
+        if (self.format == 'controlled-event-v2') != isinstance(self.record, RecordV2):
+            raise ValueError('Record version mismatch')
         if self.format == 'controlled-location-v1' and (self.record is not None or not self.locator or self.identity):
             raise ValueError('location-only requires locator, no record identity or event')
         return self
@@ -134,7 +184,7 @@ def evidence_view(connection, row):
 def verifiable(material):
     try:
         snippet = material['snippet']
-        Record.model_validate(snippet)
+        (RecordV2 if 'observation' in snippet else Record).model_validate(snippet)
         Query.model_validate_json(json.dumps(material['query']))
         return bool(material['source']) and datetime.fromisoformat(material['occurred_at']).tzinfo is not None
     except (KeyError, TypeError, ValueError):
@@ -320,6 +370,9 @@ def save_material(engine, clock, investigation_id, attempt_id, execution_id, pay
                 'redaction_note': NOTE}
             if source_mode == 'simulated':
                 result['source_mode'] = 'simulated'
+            if isinstance(payload.record, RecordV2):
+                result['snippet']['observation'] = payload.record.observation.model_dump(exclude_none=True)
+                result['format'] = 'controlled-event-v2'
             if payload.record and payload.record.causal_trace is not None:
                 result['snippet']['causal_trace'] = payload.record.causal_trace.model_dump()
             identity_key = alias('evidence-identity-v1', [payload.source_id, payload.identity.model_dump()]) if payload.identity else None

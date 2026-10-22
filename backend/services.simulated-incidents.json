@@ -1,0 +1,10 @@
+{
+  "services": [
+    {
+      "id": "orders",
+      "name": "订单链路（合成场景）",
+      "source_ids": ["sim-gateway", "sim-orders", "sim-database", "sim-redis"],
+      "source_roles": {"sim-gateway": "gateway", "sim-orders": "application", "sim-database": "database", "sim-redis": "redis"}
+    }
+  ]
+}

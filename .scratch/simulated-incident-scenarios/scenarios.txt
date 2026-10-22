@@ -1,0 +1,21 @@
+.................F....ssssssss                                           [100%]
+================================== FAILURES ===================================
+_ test_empty_partial_and_unavailable_have_distinct_outcomes[order-partial-2-\u5df2\u5b8c\u6210-True] _
+backend\tests\test_incident_scenarios.py:208: in test_empty_partial_and_unavailable_have_distinct_outcomes
+    assert client.get(path).json() == detail
+E   AssertionError: assert {'id': '9e33f...': '�����', ...} == {'id': '9e33f...': '�����', ...}
+E
+E     Omitting 17 identical items, use -vv to show
+E     Differing items:
+E     {'attempts': [{'id': '8d4a57a3-1ede-4557-9198-1e29419ac709', 'attempt_number': 1, 'service_id': 'orders', 'starts_at': '2026-11-01T00:00:00Z', ...}]} != {'attempts': [{'id': '8d4a57a3-1ede-4557-9198-1e29419ac709', 'attempt_number': 1, 'service_id': 'orders', 'starts_at': '2026-11-01T00:00:00Z', ...}]}
+E     {'updated_at': '2026-11-07T08:39:35.095879Z'} != {'updated_at': '2026-11-07T08:39:35.083219Z'}
+E     Use -v to get more diff
+============================== warnings summary ===============================
+backend/tests/test_incident_scenarios.py::test_redis_observations_reach_agent_without_answer_leak[redis-timeout-None]
+  C:\Users\c1342\WorkBuddy\log-scope\.venv\Lib\site-packages\langgraph\cache\base\__init__.py:8: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED backend/tests/test_incident_scenarios.py::test_empty_partial_and_unavailable_have_distinct_outcomes[order-partial-2-\u5df2\u5b8c\u6210-True]
+1 failed, 21 passed, 8 skipped, 1 warning in 47.52s

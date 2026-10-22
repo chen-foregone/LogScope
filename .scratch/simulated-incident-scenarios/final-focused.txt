@@ -1,0 +1,9 @@
+........................ssssssss........................................ [ 50%]
+.......................................................................  [100%]
+============================== warnings summary ===============================
+backend/tests/test_incident_scenarios.py::test_redis_observations_reach_agent_without_answer_leak[redis-timeout-None]
+  C:\Users\c1342\WorkBuddy\log-scope\.venv\Lib\site-packages\langgraph\cache\base\__init__.py:8: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+135 passed, 8 skipped, 1 warning in 365.34s (0:06:05)
