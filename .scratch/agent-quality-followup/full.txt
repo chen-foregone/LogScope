@@ -1,0 +1,16 @@
+............ssss...........ssssssss..................................... [ 11%]
+........................................................................ [ 23%]
+........................................................................ [ 35%]
+..................................................................ssssss [ 47%]
+ss...................................................................... [ 59%]
+........................................................................ [ 71%]
+........................................................................ [ 83%]
+........................................................................ [ 95%]
+..........................                                               [100%]
+============================== warnings summary ===============================
+backend/tests/test_agent_quality.py::test_observed_directions_have_evidence_without_adopting_model_category[permission-denied-permission-permission_denied]
+  C:\Users\c1342\WorkBuddy\log-scope\.venv\Lib\site-packages\langgraph\cache\base\__init__.py:8: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+582 passed, 20 skipped, 1 warning in 2060.49s (0:34:20)

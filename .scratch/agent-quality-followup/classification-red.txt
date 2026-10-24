@@ -1,0 +1,50 @@
+FFFFF                                                                    [100%]
+================================== FAILURES ===================================
+_ test_observed_directions_have_evidence_without_adopting_model_category[permission-denied-permission-permission_denied] _
+backend\tests\test_agent_quality.py:42: in test_observed_directions_have_evidence_without_adopting_model_category
+    assert conclusion['category'] == expected
+E   AssertionError: assert 'application' == 'permission'
+E
+E     - permission
+E     + application
+_ test_observed_directions_have_evidence_without_adopting_model_category[database-pool-resource-pool_capacity] _
+backend\tests\test_agent_quality.py:42: in test_observed_directions_have_evidence_without_adopting_model_category
+    assert conclusion['category'] == expected
+E   AssertionError: assert 'application' == 'resource'
+E
+E     - resource
+E     + application
+_ test_observed_directions_have_evidence_without_adopting_model_category[configuration-missing-configuration-configuration_missing] _
+backend\tests\test_agent_quality.py:42: in test_observed_directions_have_evidence_without_adopting_model_category
+    assert conclusion['category'] == expected
+E   AssertionError: assert 'application' == 'configuration'
+E
+E     - configuration
+E     + application
+_ test_observed_directions_have_evidence_without_adopting_model_category[redis-timeout-dependency-dependency_timeout] _
+backend\tests\test_agent_quality.py:42: in test_observed_directions_have_evidence_without_adopting_model_category
+    assert conclusion['category'] == expected
+E   AssertionError: assert 'application' == 'dependency'
+E
+E     - dependency
+E     + application
+_ test_observed_directions_have_evidence_without_adopting_model_category[order-correlation-unknown-None] _
+backend\tests\test_agent_quality.py:42: in test_observed_directions_have_evidence_without_adopting_model_category
+    assert conclusion['category'] == expected
+E   AssertionError: assert 'application' == 'unknown'
+E
+E     - unknown
+E     + application
+============================== warnings summary ===============================
+backend/tests/test_agent_quality.py::test_observed_directions_have_evidence_without_adopting_model_category[permission-denied-permission-permission_denied]
+  C:\Users\c1342\WorkBuddy\log-scope\.venv\Lib\site-packages\langgraph\cache\base\__init__.py:8: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED backend/tests/test_agent_quality.py::test_observed_directions_have_evidence_without_adopting_model_category[permission-denied-permission-permission_denied]
+FAILED backend/tests/test_agent_quality.py::test_observed_directions_have_evidence_without_adopting_model_category[database-pool-resource-pool_capacity]
+FAILED backend/tests/test_agent_quality.py::test_observed_directions_have_evidence_without_adopting_model_category[configuration-missing-configuration-configuration_missing]
+FAILED backend/tests/test_agent_quality.py::test_observed_directions_have_evidence_without_adopting_model_category[redis-timeout-dependency-dependency_timeout]
+FAILED backend/tests/test_agent_quality.py::test_observed_directions_have_evidence_without_adopting_model_category[order-correlation-unknown-None]
+5 failed, 1 warning in 14.78s

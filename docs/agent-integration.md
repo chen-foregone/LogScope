@@ -20,6 +20,20 @@ AGENT_BUDGET_MICROYUAN=10000000
 
 Windows 修改用户／系统环境变量后，已启动的终端、IDE 和 API 服务仍可能继承旧值。若出现 401，先重启承载服务的程序，再核对地域与模型权限；不要将密钥打印到终端或报告。本次联调实际发现进程 Key 与系统 Key 不一致，刷新子进程环境后工具调用成功。
 
+在承载API的新终端中，确认已通过服务端环境注入Key后，配置价格与开启开关。以下价格仅对应本次已核对的北京非思考价格，未来运行前需重新核对：
+
+```powershell
+$env:AGENT_BASE_URL='https://dashscope.aliyuncs.com/compatible-mode/v1'
+$env:AGENT_REGION_CONFIRMED='true'
+$env:AGENT_INPUT_MICROYUAN_PER_MILLION_TOKENS='800000'
+$env:AGENT_OUTPUT_MICROYUAN_PER_MILLION_TOKENS='2000000'
+$env:AGENT_PRICE_VERSION='beijing-public-nonthinking-2026-11-07'
+$env:AGENT_BUDGET_MICROYUAN='10000000'
+$env:AGENT_ENABLED='true'
+```
+
+安装与本机API/来源/前端启动沿用项目README及[模拟场景说明](simulated-incident-scenarios.md)。调查期间先用页面“取消调查”，等待执行退出确认；退出API时使用Ctrl+C并等待进程结束，模拟来源在其终端单独Ctrl+C停止。重启不会自动恢复旧图，只读查看历史不产生新调用；需要继续时由人工启动新轮。关闭真实模型应设置AGENT_ENABLED=false后重启API，不通过删除预算表或切换schema来“重置余额”。本批无迁移，回退代码前先停止写入并保留现有账本及脱敏审计，不运行破坏性迁移来消除已发生费用。
+
 ## 运行边界
 
 - Agent 只能请求无参数的本轮只读查询；后端绑定调查、轮次、执行身份和时间范围。
@@ -29,6 +43,9 @@ Windows 修改用户／系统环境变量后，已启动的终端、IDE 和 API 
 - 自由模型产物仅保存为假设或未确定根因；自报 confirmed 或引用传播轨迹都不能确认模型的任意解释。旧受控分析协议仍可产生固定的轨迹支撑结论。建议不自动执行，严重程度建议需要人工确认。
 - 问题描述只提取固定症状标签，结合数据库固化的服务/时间提供有限上下文，不发送原始标题或描述。标签来自未验证报告，可能包含否定语境，不能当作观测事实；无法匹配时为空。
 - 结构化轨迹报告关键矛盾时，服务端强制保留“未解决矛盾”及核验缺口，不能由模型文字排除；保存最后的业务SQL后再次检查截止时间，跨界产物全部回滚。
+- V2观测方向与模型候选分类分别展示：权限拒绝、配置缺失、连接池占用和依赖超时各自关联被引用证据；仅网关504/应用超时或多个不同方向时不强行确认唯一方向。model_category保留模型分类，observed_directions保留各方向依据。观测分类不是根因。
+- 新保存的Agent建议由服务端统一限制为当前范围只读核查项，包含旧V1材料路径；模型自由建议不会因冠以“只读”而直接展示，已有历史记录不改写。
+- Agent假设引用不可核验时显示待重新核验，保持原结果、假设和历史；只能人工关联新轮恢复支撑。恢复后新依据再次失效会再次降级，读取或来源恢复不自动续跑。
 
 ## 预算与数据
 
@@ -50,3 +67,18 @@ node node_modules/vite/bin/vite.js build
 真实链路测试为 `backend/tests/test_agent_live.py`，仅在 `RUN_BAILIAN_LIVE=1` 时执行，使用隔离 PostgreSQL、模拟 HTTP 日志和真实百炼模型。默认测试运行会跳过付费调用。`AGENT_LIVE_REPORT` 可指定脱敏验收报告路径；只应在测试目录配置该路径。
 
 真实测试覆盖普通超时、空证据、受控因果轨迹及未解决矛盾四种场景，报告保存脱敏证据和落库结果。语义评审仍不可省略：模型曾忽略结构化矛盾，因此由服务端裁决保护产物；这些案例不证明普遍推理质量。工单20的逐组覆盖、迁移与真正活动进程退出证据见 `.scratch/logscope-v1/release-validation.md`。
+
+固定质量矩阵位于 `backend/tests/test_agent_quality.py`，默认跳过真实付费调用。已配置安全凭据、价格和原累计预算后，可用下列命令复核；不要同时开启其他付费测试开关：
+
+```powershell
+$env:PYTHONPATH='backend'
+$env:PGOPTIONS='-c max_parallel_workers_per_gather=0'
+$env:AGENT_BASE_URL='https://dashscope.aliyuncs.com/compatible-mode/v1'
+$env:AGENT_ENABLED='false'
+$env:RUN_BAILIAN_QUALITY='1'
+.venv/Scripts/python.exe -m pytest backend/tests/test_agent_quality.py -k real_model -q
+```
+
+矩阵报告分别保存安全模型原始字段和服务端产物。机器断言只验证引用、分类归属和受控输出契约；人工评审还须检查因果、矛盾、替代解释、范围及业务影响是否有依据。本次8例模型分类吻合6例，仍有4例自报confirmed及其他无依据断言，不代表自由语义通过。严重程度建议仍须人工核实实际影响再确认。累计费用估算0.123742元，详见[本批验收](../.scratch/agent-quality-followup/validation.md)。
+
+前端已取消远程字体CSS导入，使用原字体名和本机回退，离线字体服务不会阻塞页面加载。启动与使用十种场景见[模拟场景说明](simulated-incident-scenarios.md)。

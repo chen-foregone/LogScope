@@ -83,15 +83,15 @@ def save_agent_analysis(engine, clock, investigation_id, attempt_id, execution_i
         kind = 'hypothesis' if ids and analysis.kind != 'undetermined' else 'undetermined'
         history = conclusion_views(connection, attempt_id)
         now = clock()
+        from app.observation_analysis import ground_observations, READONLY_RECOMMENDATIONS
         result = {'id': str(uuid4()), 'version': len(history) + 1, 'created_at': now.isoformat(),
             'format': 'agent-analysis-v1', 'kind': kind, 'category': analysis.category,
             'verification': 'insufficient', 'mechanism': None,
             'phenomenon': analysis.phenomenon, 'causal_chain': analysis.explanation,
             'alternatives': analysis.alternatives, 'contradictions': analysis.contradictions,
             'evidence_ids': ids, 'missing': analysis.missing_evidence,
-            'recommendations': analysis.recommendations,
-            'boundary': '真实模型分析；模拟日志来源。模型判断不是因果证明，建议不会自动执行。'}
-        from app.observation_analysis import ground_observations
+            'recommendations': list(READONLY_RECOMMENDATIONS),
+            'boundary': '真实模型分析；模拟日志来源。模型判断不是因果证明；展示建议由服务端限制为当前范围只读核查，不自动执行。'}
         structured = any((item['material'].get('snippet') or {}).get('observation')
                          for item in usable.values())
         ground_observations(result, [usable[value]['material'] for value in ids], required=structured)

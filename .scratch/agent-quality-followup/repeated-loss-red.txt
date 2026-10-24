@@ -1,0 +1,18 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_ test_agent_hypothesis_losing_cited_material_requires_manual_reverification __
+backend\tests\test_agent_quality.py:108: in test_agent_hypothesis_losing_cited_material_requires_manual_reverification
+    assert lost_again['verification'] == 'pending_reverification'
+E   AssertionError: assert 'supported_controlled_trace' == 'pending_reverification'
+E
+E     - pending_reverification
+E     + supported_controlled_trace
+============================== warnings summary ===============================
+backend/tests/test_agent_quality.py::test_agent_hypothesis_losing_cited_material_requires_manual_reverification
+  C:\Users\c1342\WorkBuddy\log-scope\.venv\Lib\site-packages\langgraph\cache\base\__init__.py:8: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED backend/tests/test_agent_quality.py::test_agent_hypothesis_losing_cited_material_requires_manual_reverification
+1 failed, 13 deselected, 1 warning in 5.58s

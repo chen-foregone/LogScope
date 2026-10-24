@@ -89,7 +89,7 @@ class DeadlineSource(CancelSource):
         await super().query(**scope)
 uvicorn.run(create_app(clock=clock, query_sources={'ui-limited': Limited(), 'ui-healthy': Healthy(), 'ui-cancel': CancelSource(), 'ui-deadline': DeadlineSource()}), host='127.0.0.1', port=UI_API_PORT, access_log=False)
 '''
-        if legacy_mode in ('agent', 'agent_error'):
+        if legacy_mode in ('agent', 'agent_error', 'agent_budget', 'agent_impact'):
             model_setup = '''
 import json
 from langchain_core.messages import AIMessage
@@ -107,6 +107,12 @@ settings = AgentSettings(_env_file=None, enabled=True, api_key='synthetic-test-o
 '''
             if legacy_mode == 'agent_error':
                 model_setup = model_setup.replace('        return AIMessage(', "        raise ValueError('synthetic-model-secret')\n        return AIMessage(")
+            elif legacy_mode == 'agent_budget':
+                model_setup = model_setup.replace("price_version='test-only')", "price_version='test-only', budget_microyuan=1)")
+            elif legacy_mode == 'agent_impact':
+                model_setup = model_setup.replace("'recommendations': []}",
+                    "'recommendations': [], 'impact': {'format': 'controlled-impact-v1', 'business': 'partial_or_slow', "
+                    "'users': 'partial', 'duration': 'ongoing', 'alternative': 'available'}}")
             startup = model_setup + startup.replace('create_app(clock=clock,',
                 'create_app(clock=clock, agent_settings=settings, agent_model=AgentModel(),')
         startup = startup.replace('port=UI_API_PORT', f'port={api_port}')

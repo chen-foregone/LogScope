@@ -1,0 +1,95 @@
+{
+  "scenario": "order-empty",
+  "source": "simulated-http",
+  "model": "real-qwen-plus",
+  "status": "\u5df2\u5b8c\u6210",
+  "evidence": [],
+  "coverage": {
+    "complete": true,
+    "missing_sources": [],
+    "notice": "\u67e5\u8be2\u6210\u529f\u4e0d\u8868\u793a\u6ca1\u6709\u5f02\u5e38\uff1b\u67e5\u8be2\u72b6\u6001\u4e0d\u7b49\u4e8e\u8bc1\u636e\u8986\u76d6\u3002"
+  },
+  "run": {
+    "model": "qwen-plus",
+    "phase": "completed",
+    "reason": "normal_completion",
+    "calls": 2,
+    "spent_microyuan": 3034,
+    "reserved_microyuan": 0,
+    "created_at": "2026-11-07T13:37:54.767247Z",
+    "updated_at": "2026-11-07T13:38:03.093314Z"
+  },
+  "conclusion": {
+    "id": "3a527383-5ed5-4a09-b0e2-3d7662124805",
+    "version": 1,
+    "created_at": "2026-11-07T13:38:03.093314+00:00",
+    "format": "agent-analysis-v1",
+    "kind": "undetermined",
+    "category": "unknown",
+    "verification": "insufficient",
+    "mechanism": null,
+    "phenomenon": "No evidence collected for the orders service during the specified time window.",
+    "causal_chain": "The log query returned no evidence, and coverage is complete with no missing sources. This indicates no observable activity or anomalies were recorded in any of the registered components (gateway, application, database, redis) for the orders service between 2026-11-01T00:00:00+00:00 and 2026-11-01T01:00:00+00:00.",
+    "alternatives": "The orders service may have been idle, completely offline, or routing traffic outside the observed components; alternatively, instrumentation may be absent or misconfigured for this service during the window.",
+    "contradictions": "No contradictions exist in the evidence because no evidence was found.",
+    "evidence_ids": [],
+    "missing": [
+      "Evidence confirming service liveness (e.g., health check logs)",
+      "Evidence of request ingress (e.g., gateway access logs)",
+      "Evidence of internal processing (e.g., application trace logs)"
+    ],
+    "recommendations": [
+      "Verify that the orders service was expected to be active during the time window.",
+      "Confirm instrumentation coverage for the orders service across all registered components.",
+      "Check for service deployment or routing changes that may have diverted traffic away from monitored paths."
+    ],
+    "boundary": "\u771f\u5b9e\u6a21\u578b\u5206\u6790\uff1b\u6a21\u62df\u65e5\u5fd7\u6765\u6e90\u3002\u6a21\u578b\u5224\u65ad\u4e0d\u662f\u56e0\u679c\u8bc1\u660e\uff0c\u5efa\u8bae\u4e0d\u4f1a\u81ea\u52a8\u6267\u884c\u3002"
+  },
+  "model_analysis": {
+    "kind": "undetermined",
+    "category": "unknown",
+    "phenomenon": "No evidence collected for the orders service during the specified time window.",
+    "explanation": "The log query returned no evidence, and coverage is complete with no missing sources. This indicates no observable activity or anomalies were recorded in any of the registered components (gateway, application, database, redis) for the orders service between 2026-11-01T00:00:00+00:00 and 2026-11-01T01:00:00+00:00.",
+    "evidence_ids": [],
+    "alternatives": "The orders service may have been idle, completely offline, or routing traffic outside the observed components; alternatively, instrumentation may be absent or misconfigured for this service during the window.",
+    "contradictions": "No contradictions exist in the evidence because no evidence was found.",
+    "missing_evidence": [
+      "Evidence confirming service liveness (e.g., health check logs)",
+      "Evidence of request ingress (e.g., gateway access logs)",
+      "Evidence of internal processing (e.g., application trace logs)"
+    ],
+    "recommendations": [
+      "Verify that the orders service was expected to be active during the time window.",
+      "Confirm instrumentation coverage for the orders service across all registered components.",
+      "Check for service deployment or routing changes that may have diverted traffic away from monitored paths."
+    ],
+    "impact": null
+  },
+  "expected_observed_category": "unknown",
+  "model_category_matches_observations": true,
+  "semantic_review": {
+    "raw_model": "bounded-pass",
+    "note": "unknown/undetermined\u3001\u65e0\u5f15\u7528\uff0c\u5217\u51fa\u95f2\u7f6e/\u57cb\u70b9\u7f3a\u5931\u7b49\u53ef\u80fd\uff0c\u68c0\u67e5\u5efa\u8bae\u53ea\u8bfb\uff1b\u7a7a\u7ed3\u679c\u4e0d\u8bc1\u660e\u5065\u5eb7\u3002",
+    "guarded_result": "passed-scoped-contract",
+    "guarded_boundary": "\u4ec5\u6309\u88ab\u5f15\u7528\u89c2\u6d4b\u5c55\u793a\u65b9\u5411\uff0c\u4e0d\u786e\u8ba4\u6a21\u578b\u6839\u56e0\uff1b\u5173\u952e\u77db\u76fe\u4fdd\u7559\uff0c\u4e25\u91cd\u7a0b\u5ea6\u5efa\u8bae\u4ecd\u987b\u4eba\u5de5\u786e\u8ba4\u3002"
+  },
+  "call_usage_audit": [
+    {
+      "number": 1,
+      "input_tokens": 1227,
+      "output_tokens": 15,
+      "price_version": "beijing-public-nonthinking-2026-11-07",
+      "charged": 1012,
+      "status": "settled"
+    },
+    {
+      "number": 2,
+      "input_tokens": 1739,
+      "output_tokens": 315,
+      "price_version": "beijing-public-nonthinking-2026-11-07",
+      "charged": 2022,
+      "status": "settled"
+    }
+  ],
+  "usage_audit_source": "Persisted PostgreSQL call ledger, matched by unique run timestamp"
+}

@@ -4,6 +4,7 @@ import InvestigationListPanel from './components/InvestigationListPanel.vue'
 import RetentionStatus from './components/RetentionStatus.vue'
 import AgentRunStatus from './components/AgentRunStatus.vue'
 import EvidenceObservation from './components/EvidenceObservation.vue'
+import AnalysisDirections from './components/AnalysisDirections.vue'
 import ArchiveActions from './components/ArchiveActions.vue'
 import CleanupActions from './components/CleanupActions.vue'
 import { useInvestigationList } from './composables/useInvestigationList'
@@ -20,6 +21,7 @@ type Evidence = {
 }
 type Conclusion = {
   category?: string; recommendations?: string[]
+  model_category?: string; observed_directions?: { category: string; evidence_ids: string[] }[]
   id: string; version: number; created_at: string; kind: 'hypothesis' | 'confirmed' | 'undetermined'
   verification: string; mechanism: string | null; evidence_ids: string[]; missing: string[]; boundary: string
   phenomenon?: string; causal_chain?: string; alternatives?: string; contradictions?: string
@@ -32,7 +34,7 @@ const queryReasons: Record<string, string> = { network: '临时网络故障', ti
 const conclusionLabels = { hypothesis: '待验证假设', confirmed: '已确认根因', undetermined: '未确定根因' }
 const missingLabels: Record<string, string> = { causal_trace: '同调用因果传播轨迹', dependency_observation: '依赖调用观测', alternative_exclusion: '替代解释排除依据' }
 const verificationLabels: Record<string, string> = { supported_controlled_trace: '受控轨迹支持（非普遍证明）', pending_reverification: '待重新核验', insufficient: '证据不足' }
-const verificationReasons: Record<string, string> = { source_unreachable: '来源不可访问', source_reachable: '来源可访问', material_integrity_failed: '保留材料完整性核验失败', no_retained_material: '仅有定位，缺少可核验保留材料', insufficient_verifiable_causal_support: '缺少充分可核验因果支撑；不表示原结论错误', manual_round_sufficient_causal_support: '手动新轮获得充分可核验因果支撑', alternative_sufficient_causal_support: '原依据不可核验；其他充分可核验因果轨迹继续支撑，见核验依据' }
+const verificationReasons: Record<string, string> = { cited_material_unavailable: '原假设引用的材料已不可核验；保留历史，须人工新轮核查', source_unreachable: '来源不可访问', source_reachable: '来源可访问', material_integrity_failed: '保留材料完整性核验失败', no_retained_material: '仅有定位，缺少可核验保留材料', insufficient_verifiable_causal_support: '缺少充分可核验因果支撑；不表示原结论错误', manual_round_sufficient_causal_support: '手动新轮获得充分可核验因果支撑', alternative_sufficient_causal_support: '原依据不可核验；其他充分可核验因果轨迹继续支撑，见核验依据' }
 const reverifyConclusionId = ref('')
 function prepareReverification(conclusion: Conclusion) {
   if (!selected.value || pendingStart.value || starting.value || startBlocked.value || selected.value.attempts.some(attempt => attempt.status === '调查中')) return
@@ -556,7 +558,8 @@ onUnmounted(() => window.removeEventListener('hashchange', loadPage))
                   <p v-for="id in change.evidence_ids" :key="id"><button @click="locateEvidence(change.attempt_id, id)">查看核验依据 {{ id }}</button></p>
                 </article>
                 <p v-if="conclusion.mechanism">候选机制：依赖错误传播导致请求失败</p>
-                <p v-if="conclusion.category">分析类型：{{ conclusion.category }}</p>
+                <AnalysisDirections v-if="conclusion.model_category && conclusion.observed_directions" :model-category="conclusion.model_category" :directions="conclusion.observed_directions" @locate="id => locateEvidence(attempt.id, id)" />
+                <p v-else-if="conclusion.category">分析类型：{{ conclusion.category }}</p>
                 <p v-for="(recommendation, index) in conclusion.recommendations ?? []" :key="index">只读建议：{{ recommendation }}</p>
                 <p v-if="conclusion.phenomenon">故障现象：{{ conclusion.phenomenon }}</p>
                 <p v-if="conclusion.causal_chain">因果机制：{{ conclusion.causal_chain }}</p>

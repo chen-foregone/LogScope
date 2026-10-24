@@ -1,0 +1,29 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_______ test_page_load_and_business_read_do_not_wait_for_external_fonts _______
+tests\test_agent_ui.py:28: in test_page_load_and_business_read_do_not_wait_for_external_fonts
+    page.goto(BASE, timeout=5000)
+.venv\Lib\site-packages\playwright\sync_api\_generated.py:18528: in goto
+    self._sync(
+.venv\Lib\site-packages\playwright\_impl\_page.py:564: in goto
+    return await self._main_frame.goto(**locals_to_params(locals()))
+           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+.venv\Lib\site-packages\playwright\_impl\_frame.py:157: in goto
+    await self._channel.send(
+.venv\Lib\site-packages\playwright\_impl\_connection.py:78: in send
+    return await self._connection.wrap_api_call(
+.venv\Lib\site-packages\playwright\_impl\_connection.py:636: in wrap_api_call
+    raise rewrite_error(error, f"{parsed_st['apiName']}: {error}") from None
+E   playwright._impl._errors.TimeoutError: Page.goto: Timeout 5000ms exceeded.
+E   Call log:
+E     - navigating to "http://127.0.0.1:5276/", waiting until "load"
+
+During handling of the above exception, another exception occurred:
+tests\test_agent_ui.py:30: in test_page_load_and_business_read_do_not_wait_for_external_fonts
+    pytest.fail('Business page load waits for an unavailable external font')
+E   Failed: Business page load waits for an unavailable external font
+---------------------------- Captured stdout setup ----------------------------
+UI����schema: issue03_ui_0c2453873da749b8bab45d5cda2022f8
+=========================== short test summary info ===========================
+FAILED tests/test_agent_ui.py::test_page_load_and_business_read_do_not_wait_for_external_fonts
+1 failed, 2 deselected in 16.89s

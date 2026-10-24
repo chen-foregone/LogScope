@@ -65,6 +65,8 @@ HTTP外层继续使用 `simulated-logs-v1`，成功项允许旧 `controlled-even
 
 本轮只要存在有效V2观测，服务端就约束Agent的最终展示：模型仅提供候选分类和有效证据选择，现象、解释、替代方向、矛盾、缺口及只读建议由受控观测生成。事实描述只使用被引用的观测；未引用V2（含空引用或混合轮次只引用V1）时明确提示引用不足。结构化矛盾始终保留。模型自由文本不进入这些展示字段，旧的纯V1分析行为保持兼容。这是保守的证据展示能力，不代表模型已具备可靠的自由根因推理能力。
 
+后续完善将model_category与observed_directions分开：前者保留未验证模型分类，后者只按被引用的权限/配置/容量/依赖观测归类并关联证据；仅超时或多个不同方向时汇总分类保持未知。所有新Agent产物（包括纯V1）的建议字段统一采用服务端只读核查项；V1历史及因果字段不改写。Agent引用失效会呈现待重新核验，人工新轮恢复后依据再次失效也会重新降级。详情见[后续验收](../.scratch/agent-quality-followup/validation.md)。
+
 旧normal、empty、unidentified、conflict、invalid、permission、credentials、parameters、temporary、limited、timeout模式继续可用。temporary的前两次503现在按来源分别计数，避免其他来源提前耗尽重试次数；新业务场景拒绝未知来源。没有在线场景编辑、任意URL或文件上传接口。
 
 ## 测试和真实模型

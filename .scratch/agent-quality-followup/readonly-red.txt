@@ -1,0 +1,19 @@
+F                                                                        [100%]
+================================== FAILURES ===================================
+_____ test_legacy_agent_recommendations_cannot_display_environment_writes _____
+backend\tests\test_agent_contracts.py:100: in test_legacy_agent_recommendations_cannot_display_environment_writes
+    assert 'Restart' not in str(recommendations)
+E   assert 'Restart' not in "['Restart t... capacity.']"
+E
+E     'Restart' is contained here:
+E       ['Restart the service and increase the connection pool capacity.']
+E     ?   +++++++
+============================== warnings summary ===============================
+backend/tests/test_agent_contracts.py::test_legacy_agent_recommendations_cannot_display_environment_writes
+  C:\Users\c1342\WorkBuddy\log-scope\.venv\Lib\site-packages\langgraph\cache\base\__init__.py:8: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED backend/tests/test_agent_contracts.py::test_legacy_agent_recommendations_cannot_display_environment_writes
+1 failed, 2 deselected, 1 warning in 5.98s

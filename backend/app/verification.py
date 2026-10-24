@@ -92,7 +92,8 @@ def reassess_conclusions(connection, investigation_id, now):
     rows = connection.execute(select(conclusions).join(attempts, attempts.c.id == conclusions.c.attempt_id)
         .where(attempts.c.investigation_id == investigation_id)).mappings().all()
     for row in rows:
-        if row['material']['kind'] != 'confirmed':
+        agent_analysis = row['material'].get('format') == 'agent-analysis-v1'
+        if row['material']['kind'] != 'confirmed' and not agent_analysis:
             continue
         history = conclusion_history(connection, row['id'])
         # Loss is sticky: only a linked manual new round can restore confirmation.
@@ -100,6 +101,13 @@ def reassess_conclusions(connection, investigation_id, now):
             continue
         basis_attempt = UUID(history[-1]['attempt_id']) if history else row['attempt_id']
         saved = connection.execute(included_evidence(basis_attempt)).mappings().all()
+        if agent_analysis and not history:
+            cited = row['material']['evidence_ids']
+            usable = {str(item['id']) for item in saved if evidence_usable(connection, item)}
+            if any(identity not in usable for identity in cited):
+                append_conclusion_check(connection, row['id'], 'pending_reverification',
+                    'cited_material_unavailable', cited, now, basis_attempt)
+            continue
         sufficient = [item['id'] for item in saved if evidence_usable(connection, item) and trace_supports(item['material'])]
         unresolved = any((item['material'].get('snippet') or {}).get('causal_trace')
                          and not trace_supports(item['material']) for item in saved)
