@@ -27,6 +27,8 @@ def create_mock_logs(scenario='normal'):
                 raise HTTPException(422, 'Unknown synthetic source')
             if scenario == 'order-unavailable' or (scenario == 'order-partial' and source_id in ('sim-database', 'sim-redis')):
                 raise HTTPException(403, 'Synthetic source permission denied')
+            if scenario == 'order-missing' and source_id == 'sim-redis':
+                raise HTTPException(403, 'Synthetic source permission denied')
             try:
                 return {'protocol': 'simulated-logs-v1', 'items': collect(scenario, source_id, starts_at, ends_at)}
             except ValueError:

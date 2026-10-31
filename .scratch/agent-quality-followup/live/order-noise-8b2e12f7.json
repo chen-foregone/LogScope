@@ -1,0 +1,210 @@
+{
+  "scenario": "order-noise",
+  "source": "simulated-http",
+  "model": "real-qwen-plus",
+  "status": "\u5df2\u5b8c\u6210",
+  "evidence": [
+    {
+      "source": "\u6765\u6e90\u4ee3\u53f7-e52209fc3d475c88222212f00b338d189a104242e6a7abdadcc3bc2d1224da89",
+      "occurred_at": "2026-11-01T00:15:00Z",
+      "query": {
+        "starts_at": "2026-11-01T00:00:00Z",
+        "ends_at": "2026-11-01T01:00:00Z",
+        "fields": {}
+      },
+      "snippet": {
+        "event": "request_failed",
+        "error_code": "NONE",
+        "fields": {
+          "email": "\u4ee3\u53f7-50fa542bde8af6c8a2d0abb6e6ff6fc62f0b26bfc62883e78ef9ca7329e1658f",
+          "correlation_id": "\u4ee3\u53f7-86d2c720e4f56aba7e50e1af1e7929ce2c8f1a1958dfcf531bcc4fa1b5a6f727",
+          "token": "[\u5df2\u5c4f\u853d]"
+        },
+        "observation": {
+          "component": "gateway",
+          "signal": "http_response",
+          "http_status": 504
+        }
+      },
+      "locator": null,
+      "redaction_note": "\u53d7\u63a7\u7ed3\u6784\u5316\u4e8b\u4ef6v1\uff1a\u51ed\u636e\u5c4f\u853d\uff0c\u8eab\u4efd\u4e0e\u5173\u8054\u6807\u8bc6\u4f7f\u7528\u8c03\u67e5\u5185\u4ee3\u53f7\uff0c\u5b9a\u4f4d\u6574\u4f53\u4e0d\u53ef\u9006\u4ee3\u53f7\u5316\uff1b\u4e0d\u63a5\u6536\u81ea\u7531\u6587\u672c\u6216\u672a\u77e5\u5b57\u6bb5\u3002\u4ee3\u53f7\u5b9a\u4f4d\u987b\u7531\u53d7\u63a7\u6765\u6e90\u91cd\u65b0\u6838\u9a8c\uff0c\u4e0d\u80fd\u76f4\u63a5\u6253\u5f00\u539f\u94fe\u63a5\u3002",
+      "source_mode": "simulated",
+      "format": "controlled-event-v2",
+      "id": "a550085a-ccf9-4522-8124-2d0a04cee9d6",
+      "identity_status": "reliable",
+      "source_attempt_id": "4dd182b2-f4c8-4723-a4be-834e7d6028a9",
+      "source_attempt_number": 1,
+      "source_access": "unknown",
+      "verification": "retained_structured_material",
+      "verification_version": 0,
+      "verification_history": []
+    },
+    {
+      "source": "\u6765\u6e90\u4ee3\u53f7-22933fdb3417f43b0beecd2947f81efd840148724b86072407b350ff6268406b",
+      "occurred_at": "2026-11-01T00:15:00Z",
+      "query": {
+        "starts_at": "2026-11-01T00:00:00Z",
+        "ends_at": "2026-11-01T01:00:00Z",
+        "fields": {}
+      },
+      "snippet": {
+        "event": "request_failed",
+        "error_code": "ETIMEDOUT",
+        "fields": {
+          "email": "\u4ee3\u53f7-50fa542bde8af6c8a2d0abb6e6ff6fc62f0b26bfc62883e78ef9ca7329e1658f",
+          "correlation_id": "\u4ee3\u53f7-86d2c720e4f56aba7e50e1af1e7929ce2c8f1a1958dfcf531bcc4fa1b5a6f727",
+          "token": "[\u5df2\u5c4f\u853d]"
+        },
+        "observation": {
+          "component": "application",
+          "signal": "request_timeout"
+        }
+      },
+      "locator": null,
+      "redaction_note": "\u53d7\u63a7\u7ed3\u6784\u5316\u4e8b\u4ef6v1\uff1a\u51ed\u636e\u5c4f\u853d\uff0c\u8eab\u4efd\u4e0e\u5173\u8054\u6807\u8bc6\u4f7f\u7528\u8c03\u67e5\u5185\u4ee3\u53f7\uff0c\u5b9a\u4f4d\u6574\u4f53\u4e0d\u53ef\u9006\u4ee3\u53f7\u5316\uff1b\u4e0d\u63a5\u6536\u81ea\u7531\u6587\u672c\u6216\u672a\u77e5\u5b57\u6bb5\u3002\u4ee3\u53f7\u5b9a\u4f4d\u987b\u7531\u53d7\u63a7\u6765\u6e90\u91cd\u65b0\u6838\u9a8c\uff0c\u4e0d\u80fd\u76f4\u63a5\u6253\u5f00\u539f\u94fe\u63a5\u3002",
+      "source_mode": "simulated",
+      "format": "controlled-event-v2",
+      "id": "ae9ae3a5-10b5-4752-822a-2fa4d7b3ea1b",
+      "identity_status": "reliable",
+      "source_attempt_id": "4dd182b2-f4c8-4723-a4be-834e7d6028a9",
+      "source_attempt_number": 1,
+      "source_access": "unknown",
+      "verification": "retained_structured_material",
+      "verification_version": 0,
+      "verification_history": []
+    },
+    {
+      "source": "\u6765\u6e90\u4ee3\u53f7-15a23fcda7636f9995d904e9dc23b1e37ac75a1e5378821b3c057e3c88bd7c0c",
+      "occurred_at": "2026-11-01T00:15:00Z",
+      "query": {
+        "starts_at": "2026-11-01T00:00:00Z",
+        "ends_at": "2026-11-01T01:00:00Z",
+        "fields": {}
+      },
+      "snippet": {
+        "event": "request_failed",
+        "error_code": "EACCES",
+        "fields": {
+          "email": "\u4ee3\u53f7-50fa542bde8af6c8a2d0abb6e6ff6fc62f0b26bfc62883e78ef9ca7329e1658f",
+          "correlation_id": "\u4ee3\u53f7-e3677182742778765a02b608fbff17c85049ed62dc685145bf26e22226d48993",
+          "token": "[\u5df2\u5c4f\u853d]"
+        },
+        "observation": {
+          "component": "database",
+          "signal": "permission_denied"
+        }
+      },
+      "locator": null,
+      "redaction_note": "\u53d7\u63a7\u7ed3\u6784\u5316\u4e8b\u4ef6v1\uff1a\u51ed\u636e\u5c4f\u853d\uff0c\u8eab\u4efd\u4e0e\u5173\u8054\u6807\u8bc6\u4f7f\u7528\u8c03\u67e5\u5185\u4ee3\u53f7\uff0c\u5b9a\u4f4d\u6574\u4f53\u4e0d\u53ef\u9006\u4ee3\u53f7\u5316\uff1b\u4e0d\u63a5\u6536\u81ea\u7531\u6587\u672c\u6216\u672a\u77e5\u5b57\u6bb5\u3002\u4ee3\u53f7\u5b9a\u4f4d\u987b\u7531\u53d7\u63a7\u6765\u6e90\u91cd\u65b0\u6838\u9a8c\uff0c\u4e0d\u80fd\u76f4\u63a5\u6253\u5f00\u539f\u94fe\u63a5\u3002",
+      "source_mode": "simulated",
+      "format": "controlled-event-v2",
+      "id": "212c5a53-8e73-417a-a55a-99f36062638f",
+      "identity_status": "reliable",
+      "source_attempt_id": "4dd182b2-f4c8-4723-a4be-834e7d6028a9",
+      "source_attempt_number": 1,
+      "source_access": "unknown",
+      "verification": "retained_structured_material",
+      "verification_version": 0,
+      "verification_history": []
+    }
+  ],
+  "coverage": {
+    "complete": true,
+    "missing_sources": [],
+    "notice": "\u67e5\u8be2\u6210\u529f\u4e0d\u8868\u793a\u6ca1\u6709\u5f02\u5e38\uff1b\u67e5\u8be2\u72b6\u6001\u4e0d\u7b49\u4e8e\u8bc1\u636e\u8986\u76d6\u3002"
+  },
+  "run": {
+    "model": "qwen-plus",
+    "phase": "completed",
+    "reason": "normal_completion",
+    "calls": 2,
+    "spent_microyuan": 4280,
+    "reserved_microyuan": 0,
+    "created_at": "2026-11-08T07:24:46.124827Z",
+    "updated_at": "2026-11-08T07:24:59.176230Z"
+  },
+  "conclusion": {
+    "id": "37f9d68d-813d-44e9-be11-016a5f8dc210",
+    "version": 1,
+    "created_at": "2026-11-08T07:24:59.176230+00:00",
+    "format": "agent-analysis-v1",
+    "kind": "hypothesis",
+    "category": "permission",
+    "verification": "insufficient",
+    "mechanism": null,
+    "phenomenon": "\u6570\u636e\u5e93\u62a5\u544a\u6743\u9650\u62d2\u7edd",
+    "causal_chain": "\u6570\u636e\u5e93\u62a5\u544a\u6743\u9650\u62d2\u7edd\u3002\u89c2\u6d4b\u65b9\u5411\uff1a\u6743\u9650\u95ee\u9898\uff1b\u6a21\u578b\u5019\u9009\u65b9\u5411\uff1a\u6743\u9650\u95ee\u9898\uff0c\u5c1a\u672a\u9a8c\u8bc1\u3002\u89c2\u6d4b\u5206\u7c7b\u4e0d\u8bc1\u660e\u6700\u521d\u6545\u969c\u539f\u56e0\u6216\u8de8\u7ec4\u4ef6\u56e0\u679c\u5173\u7cfb\u3002",
+    "alternatives": "\u73b0\u6709\u6750\u6599\u672a\u6392\u9664\u7f51\u7edc\u3001\u5e94\u7528\u903b\u8f91\u3001\u8d44\u6e90\u3001\u914d\u7f6e\u53ca\u4f9d\u8d56\u5f02\u5e38\uff1b\u4e0d\u80fd\u4ece\u672a\u8fd4\u56de\u65e5\u5fd7\u6392\u9664\u4efb\u4f55\u65b9\u5411\u3002",
+    "contradictions": "\u5c1a\u672a\u5b8c\u6210\u5168\u90e8\u66ff\u4ee3\u89e3\u91ca\u548c\u77db\u76fe\u6838\u67e5\uff1b\u6ca1\u6709\u62a5\u544a\u53cd\u8bc1\u4e0d\u7b49\u4e8e\u5df2\u6392\u9664\u5176\u4ed6\u539f\u56e0\u3002",
+    "evidence_ids": [
+      "212c5a53-8e73-417a-a55a-99f36062638f"
+    ],
+    "missing": [
+      "\u540c\u4e00\u8c03\u7528\u7684\u53ef\u6838\u9a8c\u56e0\u679c\u5173\u7cfb\u53ca\u5177\u4f53\u4f9d\u8d56\u8eab\u4efd",
+      "\u5019\u9009\u6545\u969c\u673a\u5236\u3001\u4e1a\u52a1\u5f71\u54cd\u548c\u66ff\u4ee3\u89e3\u91ca\u6838\u9a8c\u6750\u6599"
+    ],
+    "recommendations": [
+      "\u5728\u5f53\u524d\u8c03\u67e5\u8303\u56f4\u5185\u53ea\u8bfb\u6838\u67e5\u5019\u9009\u65b9\u5411\u7684\u65e5\u5fd7\u548c\u73b0\u6709\u6307\u6807",
+      "\u6838\u67e5\u4f20\u64ad\u4f9d\u636e\u548c\u5173\u952e\u77db\u76fe\uff1b\u6269\u5927\u8303\u56f4\u987b\u7531\u4eba\u5de5\u53e6\u5f00\u8c03\u67e5"
+    ],
+    "boundary": "\u771f\u5b9e\u6a21\u578b\u4ec5\u63d0\u4f9b\u5019\u9009\u5206\u7c7b\u4e0e\u8bc1\u636e\u9009\u62e9\uff1b\u89e3\u91ca\u6309\u53d7\u63a7\u7ed3\u6784\u5316\u89c2\u6d4b\u751f\u6210\uff0c\u672a\u91c7\u7eb3\u81ea\u7531\u6587\u672c\u56e0\u679c\u65ad\u8a00\u548c\u4fee\u6539\u5efa\u8bae\u3002\u6a21\u62df\u6765\u6e90\uff0c\u975e\u751f\u4ea7\u6839\u56e0\u786e\u8ba4\u3002",
+    "model_category": "permission",
+    "observed_directions": [
+      {
+        "category": "permission",
+        "evidence_ids": [
+          "212c5a53-8e73-417a-a55a-99f36062638f"
+        ]
+      }
+    ],
+    "grounding": "structured-observations-v1"
+  },
+  "model_analysis": {
+    "kind": "confirmed",
+    "category": "permission",
+    "phenomenon": "Database permission denied error (EACCES) observed for a request with correlation_id 'e3677182742778765a02b608fbff17c85049ed62dc685145bf26e22226d48993'",
+    "explanation": "The database component reported 'permission_denied' (EACCES) for one request. This is a confirmed permission issue at the database layer, distinct from the gateway 504 and application timeout signals which occurred at the same time but for a different correlation_id. The EACCES event is isolated to the database component and directly indicates an authorization failure.",
+    "evidence_ids": [
+      "212c5a53-8e73-417a-a55a-99f36062638f"
+    ],
+    "alternatives": "The gateway 504 and application ETIMEDOUT errors (for correlation_id '86d2c720e4f56aba7e50e1af1e7929ce2c8f1a1958dfcf531bcc4fa1b5a6f727') may reflect separate issues\u2014such as upstream dependency failure or resource exhaustion\u2014but are not explained by the observed database permission error, as they involve different requests.",
+    "contradictions": "No contradiction: the three observed errors (gateway 504, application timeout, database EACCES) occur at the same timestamp but with two distinct correlation_ids, confirming they are independent events\u2014not manifestations of a single root cause.",
+    "missing_evidence": [
+      "Database access control configuration",
+      "Database user role assignment logs",
+      "Audit logs showing attempted database operation type"
+    ],
+    "recommendations": [
+      "Verify database user permissions for the affected account",
+      "Check database role grants and access control lists",
+      "Review database audit logs for the specific operation that triggered EACCES"
+    ],
+    "impact": {
+      "format": "controlled-impact-v1",
+      "business": "key_operations_blocked",
+      "users": "local",
+      "duration": "ongoing",
+      "alternative": "none"
+    }
+  },
+  "token_usage": [
+    {
+      "input_tokens": 1227,
+      "output_tokens": 15,
+      "total_tokens": 1242
+    },
+    {
+      "input_tokens": 2830,
+      "output_tokens": 502,
+      "total_tokens": 3332
+    }
+  ],
+  "expected_observed_category": "permission",
+  "model_category_matches_observations": true,
+  "semantic_review": {
+    "raw_model": "partial",
+    "reason": "\u6b63\u786e\u533a\u5206\u4e0d\u540c\u5173\u8054\u4ee3\u53f7\u5e76\u672a\u5c06\u6570\u636e\u5e93\u6743\u9650\u62d2\u7edd\u76f4\u63a5\u89e3\u91ca\u4e3a\u53e6\u4e00\u4e2a\u8bf7\u6c42\u8d85\u65f6\uff1b\u4f46\u4e0d\u540c\u4ee3\u53f7\u4e0d\u80fd\u8bc1\u660e\u6545\u969c\u539f\u56e0\u72ec\u7acb\uff0ckind=confirmed\u53ca\u5f71\u54cd\u8303\u56f4\u6ca1\u6709\u5145\u5206\u8bc1\u636e\u3002",
+    "guarded_contract": "passed",
+    "boundary": "Safe schema-validated model fields only; invalid or potentially secret text is not archived. Observed category matching is not causal correctness."
+  }
+}

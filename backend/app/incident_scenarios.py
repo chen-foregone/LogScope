@@ -5,6 +5,7 @@ SOURCES = ('sim-gateway', 'sim-orders', 'sim-database', 'sim-redis')
 SCENARIOS = ('order-correlation', 'redis-timeout', 'redis-propagation', 'redis-contradiction',
              'database-pool', 'configuration-missing', 'permission-denied')
 SCENARIOS += ('order-empty', 'order-partial', 'order-unavailable')
+SCENARIOS += ('order-noise', 'order-multiple', 'order-conflicting', 'order-missing')
 OCCURRED = datetime(2026, 11, 1, 0, 15, tzinfo=timezone.utc)
 
 
@@ -19,18 +20,21 @@ def collect(scenario, source_id, starts_at, ends_at):
         'sim-gateway': ('request_failed', 'NONE', {'component': 'gateway', 'signal': 'http_response', 'http_status': 504}),
         'sim-orders': ('request_failed', 'ETIMEDOUT', {'component': 'application', 'signal': 'request_timeout'}),
     }
-    if scenario.startswith('redis-'):
+    if scenario.startswith('redis-') or scenario == 'order-conflicting':
         observations['sim-redis'] = ('dependency_failed', 'ETIMEDOUT',
                                     {'component': 'redis', 'signal': 'dependency_timeout'})
-    if scenario == 'database-pool':
+    if scenario in ('database-pool', 'order-multiple'):
         observations['sim-database'] = ('dependency_failed', 'NONE',
             {'component': 'database', 'signal': 'pool_capacity', 'used': 100, 'capacity': 100, 'unit': 'connections'})
     if scenario == 'configuration-missing':
         observations['sim-orders'] = ('request_failed', 'NONE',
                                      {'component': 'application', 'signal': 'configuration_missing'})
-    if scenario == 'permission-denied':
+    if scenario in ('permission-denied', 'order-multiple'):
         observations['sim-orders'] = ('request_failed', 'EACCES',
                                      {'component': 'application', 'signal': 'permission_denied'})
+    if scenario == 'order-noise':
+        observations['sim-database'] = ('request_failed', 'EACCES',
+            {'component': 'database', 'signal': 'permission_denied'})
     if source_id not in observations:
         return []
     event, error, observation = observations[source_id]
@@ -40,10 +44,13 @@ def collect(scenario, source_id, starts_at, ends_at):
                        'fields': {'correlation_id': 'synthetic-request-1', 'email': 'synthetic@example.invalid',
                                   'token': 'synthetic-secret'}},
             'identity': {'kind': 'record', 'record_id': 'record-1'}}
-    if source_id == 'sim-orders' and scenario in ('redis-propagation', 'redis-contradiction'):
+    if scenario == 'order-noise' and source_id == 'sim-database':
+        item['record']['fields']['correlation_id'] = 'synthetic-unrelated-request'
+    if source_id == 'sim-orders' and scenario in (
+            'redis-propagation', 'redis-contradiction', 'order-conflicting', 'order-missing'):
         item['record']['causal_trace'] = {
             'format': 'observed-propagation-v1', 'dependency_error': 'ETIMEDOUT',
             'propagated_error': 'ETIMEDOUT', 'request_outcome': 'failed_by_dependency',
             'local_rejection': 'excluded_by_trace', 'independent_failure': 'excluded_by_trace',
-            'contradiction': 'unresolved' if scenario == 'redis-contradiction' else 'none_observed'}
+            'contradiction': 'unresolved' if scenario in ('redis-contradiction', 'order-conflicting') else 'none_observed'}
     return [item, item]

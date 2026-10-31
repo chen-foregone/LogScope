@@ -144,7 +144,9 @@ def test_multiple_observed_directions_keep_separate_citations_without_choosing_a
     ('order-correlation', 'unknown', 2), ('redis-propagation', 'dependency', 3),
     ('redis-contradiction', 'dependency', 3), ('database-pool', 'resource', 3),
     ('configuration-missing', 'configuration', 2), ('permission-denied', 'permission', 2),
-    ('order-empty', 'unknown', 0), ('order-partial', 'unknown', 2)])
+    ('order-empty', 'unknown', 0), ('order-partial', 'unknown', 2),
+    ('order-noise', 'permission', 3), ('order-multiple', 'unknown', 3),
+    ('order-conflicting', 'dependency', 3), ('order-missing', 'unknown', 2)])
 def test_real_model_quality_matrix(database_url, tmp_path, serve_app, scenario, category, count):
     from app.agent_model import AgentAnalysis, BailianModel
     from app.core.config import AgentSettings
@@ -213,7 +215,11 @@ def test_real_model_quality_matrix(database_url, tmp_path, serve_app, scenario, 
             assert set(conclusion['evidence_ids']).issubset(item['id'] for item in attempt['evidence'])
             if count:
                 assert conclusion['grounding'] == 'structured-observations-v1'
-            if scenario == 'redis-contradiction':
+            if scenario in ('redis-contradiction', 'order-conflicting'):
                 assert '未解决矛盾' in conclusion['contradictions']
+            if scenario == 'order-multiple':
+                assert {item['category'] for item in conclusion['observed_directions']} == {'permission', 'resource'}
+            if scenario == 'order-missing':
+                assert attempt['query_coverage']['missing_sources']
         finally:
             client.portal.call(model.close)

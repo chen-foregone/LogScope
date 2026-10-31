@@ -1,0 +1,16 @@
+................ssss............ssssssssssss............................ [ 11%]
+........................................................................ [ 23%]
+........................................................................ [ 35%]
+........................................................................ [ 46%]
+.......ssssssss......................................................... [ 58%]
+........................................................................ [ 70%]
+........................................................................ [ 81%]
+........................................................................ [ 93%]
+.........................................                                [100%]
+============================== warnings summary ===============================
+backend/tests/test_agent_contracts.py::test_repeated_readonly_queries_stop_at_limit_and_keep_deduplicated_evidence[False]
+  C:\Users\c1342\WorkBuddy\log-scope\.venv\Lib\site-packages\langgraph\cache\base\__init__.py:8: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+593 passed, 24 skipped, 1 warning in 1843.72s (0:30:43)

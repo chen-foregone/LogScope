@@ -1,0 +1,8 @@
+............................ssssssss.......ssssssssssss                  [100%]
+============================== warnings summary ===============================
+backend/tests/test_incident_edge_cases.py::test_edge_cases_preserve_independent_facts_gaps_and_history[order-noise-3-categories0]
+  C:\Users\c1342\WorkBuddy\log-scope\.venv\Lib\site-packages\langgraph\cache\base\__init__.py:8: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+35 passed, 20 skipped, 1 warning in 94.07s (0:01:34)
