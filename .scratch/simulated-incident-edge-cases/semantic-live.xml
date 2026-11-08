@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?><testsuites name="pytest tests"><testsuite name="pytest" errors="0" failures="1" skipped="0" tests="4" time="78.743" timestamp="2026-11-08T20:31:02.903332+08:00" hostname="foregone"><testcase classname="backend.tests.test_agent_quality" name="test_real_model_quality_matrix[order-noise-permission-3]" time="25.350" /><testcase classname="backend.tests.test_agent_quality" name="test_real_model_quality_matrix[order-multiple-unknown-3]" time="14.733"><failure message="AssertionError: assert 'resource' == 'unknown'&#10;  &#10;  - unknown&#10;  + resource">backend\tests\test_agent_quality.py:232: in test_real_model_quality_matrix
+    assert model.analysis['category'] == 'unknown'
+E   AssertionError: assert 'resource' == 'unknown'
+E
+E     - unknown
+E     + resource</failure></testcase><testcase classname="backend.tests.test_agent_quality" name="test_real_model_quality_matrix[order-conflicting-dependency-3]" time="16.535" /><testcase classname="backend.tests.test_agent_quality" name="test_real_model_quality_matrix[order-missing-unknown-2]" time="17.797" /></testsuite></testsuites>

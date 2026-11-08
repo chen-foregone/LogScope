@@ -82,3 +82,7 @@ $env:RUN_BAILIAN_QUALITY='1'
 矩阵报告分别保存安全模型原始字段和服务端产物。机器断言只验证引用、分类归属和受控输出契约；人工评审还须检查因果、矛盾、替代解释、范围及业务影响是否有依据。本次8例模型分类吻合6例，仍有4例自报confirmed及其他无依据断言，不代表自由语义通过。严重程度建议仍须人工核实实际影响再确认。累计费用估算0.123742元，详见[本批验收](../.scratch/agent-quality-followup/validation.md)。
 
 前端已取消远程字体CSS导入，使用原字体名和本机回退，离线字体服务不会阻塞页面加载。启动与使用十种场景见[模拟场景说明](simulated-incident-scenarios.md)。
+
+## 模型语义后续实验
+
+2026-11-08 增补提示词以保留矛盾、多个方向及因果不确定性，不改变服务端证据约束或确认能力。固定四例真实评估中原始kind均为hypothesis、impact均为空，但多方向分类及自由文字仍有失败，不能视为完整语义通过；[验收状态](../.scratch/simulated-incident-edge-cases/semantic-validation.md)保留旧新报告、失败与费用。付费质量矩阵可额外设置 `CHECK_RAW_AGENT_SEMANTICS=1` 检查原始kind/impact等有限字段，仍须显式启用 `RUN_BAILIAN_QUALITY=1`；字段断言不是完整文字语义验收。

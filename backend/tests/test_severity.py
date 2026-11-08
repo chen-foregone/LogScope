@@ -14,6 +14,8 @@ def dump_schema(database_url):
     metadata = MetaData()
     try:
         with engine.connect() as connection:
+            # URL search_path options can override PGOPTIONS in the test process.
+            connection.exec_driver_sql('SET LOCAL max_parallel_workers_per_gather = 0')
             metadata.reflect(connection)
             return json.dumps({name: [dict(row) for row in connection.execute(select(table)).mappings()]
                                for name, table in metadata.tables.items()}, default=repr, ensure_ascii=False)

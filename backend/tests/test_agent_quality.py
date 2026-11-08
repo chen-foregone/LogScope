@@ -206,6 +206,9 @@ def test_real_model_quality_matrix(database_url, tmp_path, serve_app, scenario, 
                 'expected_observed_category': category,
                 'model_category_matches_observations': bool(model.analysis and model.analysis['category'] == category),
                 'semantic_review': 'pending-human-review'}
+            from hashlib import sha256
+            from app.agent_model import SYSTEM
+            report['prompt_sha256'] = sha256(SYSTEM.encode()).hexdigest()
             (report_dir / (scenario + '-' + uuid4().hex[:8] + '.json')).write_text(
                 json.dumps(report, ensure_ascii=True, indent=2), encoding='utf-8')
             assert detail['status'] == '已完成'
@@ -221,5 +224,11 @@ def test_real_model_quality_matrix(database_url, tmp_path, serve_app, scenario, 
                 assert {item['category'] for item in conclusion['observed_directions']} == {'permission', 'resource'}
             if scenario == 'order-missing':
                 assert attempt['query_coverage']['missing_sources']
+            if os.environ.get('CHECK_RAW_AGENT_SEMANTICS') == '1':
+                assert model.analysis is not None
+                assert model.analysis['kind'] in ('hypothesis', 'undetermined')
+                assert model.analysis['impact'] is None, 'No independent business impact observations'
+                if scenario == 'order-multiple':
+                    assert model.analysis['category'] == 'unknown'
         finally:
             client.portal.call(model.close)

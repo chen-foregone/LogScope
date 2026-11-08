@@ -1,0 +1,18 @@
+.F..                                                                     [100%]
+================================== FAILURES ===================================
+__________ test_real_model_quality_matrix[order-multiple-unknown-3] ___________
+backend\tests\test_agent_quality.py:232: in test_real_model_quality_matrix
+    assert model.analysis['category'] == 'unknown'
+E   AssertionError: assert 'resource' == 'unknown'
+E
+E     - unknown
+E     + resource
+============================== warnings summary ===============================
+backend/tests/test_agent_quality.py::test_real_model_quality_matrix[order-noise-permission-3]
+  C:\Users\c1342\WorkBuddy\log-scope\.venv\Lib\site-packages\langgraph\cache\base\__init__.py:8: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED backend/tests/test_agent_quality.py::test_real_model_quality_matrix[order-multiple-unknown-3]
+1 failed, 3 passed, 15 deselected, 1 warning in 78.74s (0:01:18)
