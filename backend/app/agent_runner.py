@@ -91,6 +91,7 @@ async def run_agent(engine, run, config, model, sources, schedule, clock):
     from langchain_core.messages import SystemMessage, HumanMessage, ToolMessage
     from langgraph.graph import StateGraph, START, END
     from app.agent_model import AgentAnalysis, SYSTEM
+    from app.observation_analysis import model_evidence_context
     from app.conclusions import save_agent_analysis
     from app.queries import execute_query, wait_for_exit
     reason = 'model_error'
@@ -155,7 +156,7 @@ async def run_agent(engine, run, config, model, sources, schedule, clock):
                 registered = [{'source': alias, 'component': getattr(sources.get(source), 'component', None)}
                               for source, alias in zip(row['source_ids'], aliases)]
             return {'messages': state['messages'] + [safe_reply, ToolMessage(
-                content=json.dumps({'evidence': materials, 'coverage': coverage, 'registered_sources': registered},
+                content=json.dumps({**model_evidence_context(materials), 'coverage': coverage, 'registered_sources': registered},
                                    ensure_ascii=True), tool_call_id=tool['id'])],
                 'steps': state['steps'] + 1, 'done': False}
         if not isinstance(reply.content, str) or len(reply.content.encode()) > 32768:
@@ -183,7 +184,7 @@ async def run_agent(engine, run, config, model, sources, schedule, clock):
         from langsmith import tracing_context
         with tracing_context(enabled=False):
             await graph.compile().ainvoke({'messages': [SystemMessage(content=SYSTEM), HumanMessage(
-                content=json.dumps({**context, 'evidence': materials, 'source_mode': 'simulated',
+                content=json.dumps({**context, **model_evidence_context(materials), 'source_mode': 'simulated',
                                     'task': 'Investigate the fixed scope; collect evidence if needed.'}))],
                 'steps': 0, 'done': False}, config={'recursion_limit': config.max_calls + 2, 'callbacks': []})
     except BudgetUnavailable:

@@ -480,7 +480,7 @@ def test_cross_round_sensitive_material_never_persists_raw_values(database_url, 
         conflict = client.post(fresh, json=conflicting, headers=auth)
         assert conflict.status_code == 409
         public = json.dumps(client.get(path).json(), ensure_ascii=False) + invalid.text + conflict.text + caplog.text
-        schema = parse_qs(urlsplit(database_url).query)['options'][0].split('=')[1]
+        schema = parse_qs(urlsplit(database_url).query)['options'][0].split('=')[1].split()[0]
         dumped = subprocess.run(['docker', 'exec', '-e', 'PGOPTIONS=-c max_parallel_workers_per_gather=0',
             'logscope-01-test-pg17', 'pg_dump', '-U', 'logscope_test', '-d', 'logscope_test', '--data-only', '--schema', schema], capture_output=True)
         assert dumped.returncode == 0, '隔离schema隐私审计失败'

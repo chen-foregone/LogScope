@@ -24,7 +24,8 @@ def database_url(request):
     engine = create_engine(DATABASE_URL)
     with engine.begin() as connection:
         connection.execute(text(f'CREATE SCHEMA "{schema}"'))
-    url = f"{DATABASE_URL}?options=-csearch_path%3D{schema}"
+    # URL options override PGOPTIONS; retain the small test container's no-parallel limit.
+    url = f"{DATABASE_URL}?options=-csearch_path%3D{schema}%20-cmax_parallel_workers_per_gather%3D0"
     result = subprocess.run(
         [sys.executable, "-m", "alembic", "-c", str(ROOT / "backend/alembic.ini"), "upgrade", getattr(request, 'param', 'head')],
         cwd=ROOT, env={**os.environ, "DATABASE_URL": url, "PYTHONPATH": str(ROOT / "backend")},

@@ -37,7 +37,8 @@ def evidence_executor(tmp_path_factory, request):
         connection.execute(text(f'CREATE SCHEMA "{schema}"'))
     engine.dispose()
     credential = secrets.token_urlsafe(32)
-    env = {**os.environ, 'DATABASE_URL': database + '?options=-csearch_path%3D' + schema,
+    env = {**os.environ, 'DATABASE_URL': database + '?options=-csearch_path%3D' + schema
+           + '%20-cmax_parallel_workers_per_gather%3D0',
            'PYTHONPATH': str(ROOT / 'backend'), 'SERVICES_FILE': str(ROOT / 'backend/services.example.json'),
            'EXECUTOR_CREDENTIAL': credential, 'UI_API_TARGET': f'http://127.0.0.1:{api_port}', 'NO_PROXY': '127.0.0.1,localhost', 'no_proxy': '127.0.0.1,localhost'}
     legacy_mode = getattr(request, 'param', None)

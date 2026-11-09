@@ -149,7 +149,7 @@ def test_safety_late_writes_and_completed_replays(database_url, tmp_path, caplog
         assert client.get(path).json() == after
         import subprocess
         from urllib.parse import urlsplit, parse_qs
-        schema = parse_qs(urlsplit(database_url).query)['options'][0].split('=')[1]
+        schema = parse_qs(urlsplit(database_url).query)['options'][0].split('=')[1].split()[0]
         dumped = subprocess.run(['docker', 'exec', '-e', 'PGOPTIONS=-c max_parallel_workers_per_gather=0', 'logscope-01-test-pg17', 'pg_dump', '-U', 'logscope_test',
             '-d', 'logscope_test', '--data-only', '--schema', schema], capture_output=True)
         assert dumped.returncode == 0

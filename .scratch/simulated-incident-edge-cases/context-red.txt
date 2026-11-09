@@ -1,0 +1,20 @@
+F
+================================== FAILURES ===================================
+_ test_edge_cases_preserve_independent_facts_gaps_and_history[order-noise-3-categories0] _
+backend\tests\test_incident_edge_cases.py:73: in test_edge_cases_preserve_independent_facts_gaps_and_history
+    assert set(item['snippet']['fields']) <= {'correlation_id'}
+E   AssertionError: assert {'correlation...ail', 'token'} <= {'correlation_id'}
+E
+E     Extra items in the left set:
+E     'token'
+E     'email'
+============================== warnings summary ===============================
+backend/tests/test_incident_edge_cases.py::test_edge_cases_preserve_independent_facts_gaps_and_history[order-noise-3-categories0]
+  C:\Users\c1342\WorkBuddy\log-scope\.venv\Lib\site-packages\langgraph\cache\base\__init__.py:8: LangChainPendingDeprecationWarning: The default value of `allowed_objects` will change in a future version. Pass an explicit value (e.g., allowed_objects='messages' or allowed_objects='core') to suppress this warning.
+    from langgraph.checkpoint.serde.jsonplus import JsonPlusSerializer
+
+-- Docs: https://docs.pytest.org/en/stable/how-to/capture-warnings.html
+=========================== short test summary info ===========================
+FAILED backend/tests/test_incident_edge_cases.py::test_edge_cases_preserve_independent_facts_gaps_and_history[order-noise-3-categories0]
+!!!!!!!!!!!!!!!!!!!!!!!!!! stopping after 1 failures !!!!!!!!!!!!!!!!!!!!!!!!!!
+1 failed, 1 warning in 9.71s

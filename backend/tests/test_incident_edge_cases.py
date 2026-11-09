@@ -67,6 +67,22 @@ def test_edge_cases_preserve_independent_facts_gaps_and_history(
         assert scenario not in outbound
         assert 'synthetic-secret' not in outbound
         assert 'synthetic@example.invalid' not in outbound
+        context = next(json.loads(content) for content in reversed(seen)
+                       if content.startswith('{') and '"coverage"' in content)
+        for item in context['evidence']:
+            assert set(item['snippet']['fields']) <= {'correlation_id'}
+            assert item['interpretation_limits']['business_impact'] == 'not_observed'
+            assert item['interpretation_limits']['cross_component_causality'] == 'not_established'
+            if item['snippet'].get('causal_trace'):
+                assert item['interpretation_limits']['named_dependency'] == 'not_observed'
+                assert item['interpretation_limits']['trace_scope'] == 'this_event_only'
+        assert {item['category'] for item in context['observed_directions']} == categories
+        if scenario == 'order-multiple':
+            assert context['observation_category'] == 'unknown'
+            assert {item['category']: item['evidence_ids'] for item in context['observed_directions']} == {
+                item['category']: item['evidence_ids'] for item in conclusion['observed_directions']}
+        # Projection is model-only: the retained evidence remains complete and redacted.
+        assert all('email' in item['snippet']['fields'] for item in attempt['evidence'])
         assert client.get(path).json() == detail
     with scenario_client(database_url, tmp_path, source_url, credential) as restarted:
         assert restarted.get(path).json() == detail

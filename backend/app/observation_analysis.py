@@ -9,6 +9,40 @@ OBSERVED_CATEGORIES = {'pool_capacity': 'resource', 'configuration_missing': 'co
                        'permission_denied': 'permission', 'dependency_timeout': 'dependency'}
 READONLY_RECOMMENDATIONS = ('在当前调查范围内只读核查候选方向的日志和现有指标',
                             '核查传播依据和关键矛盾；扩大范围须由人工另开调查')
+MODEL_CONTEXT_VERSION = 'bounded-observations-v1'
+
+
+def model_evidence_context(materials):
+    """Project retained V2 facts without identity distractions or inferred causal links."""
+    projected = []
+    directions = {}
+    for item in materials:
+        snippet = item.get('snippet') or {}
+        observation = snippet.get('observation')
+        if not observation:
+            projected.append(item)
+            continue
+        category = OBSERVED_CATEGORIES.get(observation['signal'])
+        if category:
+            directions.setdefault(category, []).append(item['id'])
+        fields = snippet.get('fields') or {}
+        limits = {'business_impact': 'not_observed', 'cross_component_causality': 'not_established'}
+        if snippet.get('causal_trace'):
+            limits.update(named_dependency='not_observed', trace_scope='this_event_only')
+        projected.append({**item, 'snippet': {**snippet,
+            'fields': {key: value for key, value in fields.items() if key == 'correlation_id'}},
+            'interpretation_limits': limits})
+    result = {'evidence': projected}
+    if any((item.get('snippet') or {}).get('observation') for item in materials):
+        result.update(context_protocol=MODEL_CONTEXT_VERSION,
+            observed_directions=[{'category': category, 'evidence_ids': ids}
+                                 for category, ids in directions.items()],
+            observation_category=next(iter(directions)) if len(directions) == 1 else 'unknown',
+            summary_boundary='Server-derived observation labels, not root causes. Multiple directions '
+                             'must remain separate. Neither shared nor different correlation IDs '
+                             'establish causal propagation or independent causes. Empty or unavailable '
+                             'sources cannot exclude faults. Trace declarations apply only to their event.')
+    return result
 
 
 def ground_observations(result, materials, *, required=False):

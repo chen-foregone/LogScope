@@ -209,6 +209,8 @@ def test_real_model_quality_matrix(database_url, tmp_path, serve_app, scenario, 
             from hashlib import sha256
             from app.agent_model import SYSTEM
             report['prompt_sha256'] = sha256(SYSTEM.encode()).hexdigest()
+            from app.observation_analysis import MODEL_CONTEXT_VERSION
+            report['context_protocol'] = MODEL_CONTEXT_VERSION
             (report_dir / (scenario + '-' + uuid4().hex[:8] + '.json')).write_text(
                 json.dumps(report, ensure_ascii=True, indent=2), encoding='utf-8')
             assert detail['status'] == '已完成'
